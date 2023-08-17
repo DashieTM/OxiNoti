@@ -25,6 +25,7 @@ pub fn show_notification(
     notification: Notification,
 ) {
     let notibox = NotificationButton::new(gtk::Orientation::Horizontal, 5);
+    notibox.set_css_classes(&["NotificationBox"]);
     let bodybox = Box::new(gtk::Orientation::Vertical, 5);
     let imagebox = Box::new(gtk::Orientation::Vertical, 5);
 
@@ -52,13 +53,16 @@ pub fn show_notification(
             if noticount.get() == 0 {
             window.hide();
             }
-use dbus::blocking::Connection;
-use std::time::Duration;
+            let id = notibox.imp().notification_id.get();
+            thread::spawn(move || {
+                use dbus::blocking::Connection;
+                use std::time::Duration;
 
-    let conn = Connection::new_session().unwrap();
-    let proxy = conn.with_proxy("org.freedesktop.Notifications2", "/org/freedesktop/Notifications2", Duration::from_millis(5000));
-let _: Result<(), dbus::Error> =
-        proxy.method_call("org.freedesktop.Notifications2", "CloseNotification", (notibox.imp().notification_id.get(),));
+                let conn = Connection::new_session().unwrap();
+                let proxy = conn.with_proxy("org.freedesktop.Notifications2", "/org/freedesktop/Notifications2", Duration::from_millis(1000));
+                let _: Result<(), dbus::Error> =
+                    proxy.method_call("org.freedesktop.Notifications2", "CloseNotification", (id,));
+            });
         }),
     );
     notibox.add_controller(gesture);
@@ -68,13 +72,13 @@ let _: Result<(), dbus::Error> =
     window.show();
 }
 
-pub fn initialize_ui() {
+pub fn initialize_ui(css_string: String) {
     let app = Application::builder().application_id(APP_ID).build();
     app.connect_startup(move |_| {
         if !adw::is_initialized() {
             adw::init().unwrap();
         }
-        load_css(&"".to_string());
+        load_css(&css_string);
     });
 
     app.connect_activate(move |app| {
@@ -83,7 +87,10 @@ pub fn initialize_ui() {
             let mut server = NotificationServer::create(tx);
             server.run();
         });
-        let window = Window::builder().application(app).build();
+        let window = Window::builder()
+            .name("MainWindow")
+            .application(app)
+            .build();
         window.set_vexpand_set(true);
 
         gtk4_layer_shell::init_for_window(&window);
@@ -137,5 +144,5 @@ pub fn initialize_ui() {
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
     }
-    app.run();
+    app.run_with_args(&[""]);
 }

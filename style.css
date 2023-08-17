@@ -1,0 +1,12 @@
+#MainWindow {
+  background-color: rgba(0, 0, 0, 0);
+  padding: 0px;
+}
+
+.NotificationBox {
+  border-radius: 5px;
+  border: solid 1px;
+  margin: 5px;
+}
+
+
