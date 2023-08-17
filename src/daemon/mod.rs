@@ -33,6 +33,13 @@ impl Urgency {
             Urgency::Urgent => 3,
         }
     }
+    pub fn to_str(&self) -> &str {
+        match self {
+            Urgency::Low => "NotificationLow",
+            Urgency::Normal => "NotificationNormal",
+            Urgency::Urgent => "NotificationUrgent",
+        }
+    }
 }
 
 impl Display for Urgency {
@@ -51,6 +58,7 @@ pub struct Notification {
     pub hints: arg::PropMap,
     pub expire_timeout: i32,
     pub urgency: Urgency,
+    pub image_path: Option<String>,
 }
 
 impl Clone for Notification {
@@ -65,6 +73,7 @@ impl Clone for Notification {
             hints: arg::PropMap::new(),
             expire_timeout: self.expire_timeout.clone(),
             urgency: self.urgency.clone(),
+            image_path: self.image_path.clone(),
         }
     }
 }
@@ -90,6 +99,7 @@ impl Notification {
             hints,
             expire_timeout,
             urgency: Urgency::Low,
+            image_path: None,
         }
     }
 
@@ -104,6 +114,7 @@ impl Notification {
             hints: arg::PropMap::new(),
             expire_timeout: 0,
             urgency: Urgency::Low,
+            image_path: None,
         }
     }
 
@@ -133,7 +144,7 @@ impl NotificationWrapper {
             handle,
         }
     }
-    pub fn add_notification(&mut self, mut notification: Notification) {
+    pub fn add_notification(&mut self, notification: &mut Notification) {
         self.id_map
             .insert(notification.replaces_id, self.notifications.len() as i32);
         let urgency = notification.hints.get("urgency");
@@ -141,7 +152,12 @@ impl NotificationWrapper {
             let urg = Urgency::from_i32(urgency.unwrap().as_i64().unwrap_or_else(|| 1) as i32);
             notification.urgency = urg.unwrap_or_else(|_| -> Urgency { Urgency::Low });
         }
-        self.notifications.push(notification);
+        let image_path = notification.hints.get("image-path");
+        if image_path.is_some() {
+            notification.image_path =
+                Some(image_path.unwrap().as_str().unwrap_or_default().to_string());
+        }
+        self.notifications.push(notification.clone());
     }
     pub fn remove_notification(&mut self, id: u32) {
         let index = self.id_map.remove(&id);
@@ -217,7 +233,7 @@ impl NotificationServer {
                     arg::PropMap,
                     i32,
                 )| {
-                    let notification = Notification::create(
+                    let mut notification = Notification::create(
                         app_name,
                         replaces_id,
                         app_icon,
@@ -228,15 +244,14 @@ impl NotificationServer {
                         expire_timeout,
                     );
                     notification.print();
-                    // notifications.push(notification);
                     let mut server = serverref.lock().unwrap();
+                    server.add_notification(&mut notification);
                     if !server.do_not_disturb {
                         server
                             .handle
-                            .send(notification.clone())
+                            .send(notification)
                             .expect("Failed to send notification.");
                     }
-                    server.add_notification(notification);
                     Ok(("ok",))
                 },
             );

@@ -4,12 +4,13 @@ use std::{cell::Cell, rc::Rc, thread};
 
 use adw::{traits::AdwWindowExt, Window};
 use gtk::{
-    gio::SimpleAction,
+    builders::PictureBuilder,
+    gio::{File, SimpleAction},
     glib::{self, clone},
     prelude::{ApplicationExt, ApplicationExtManual},
     subclass::prelude::ObjectSubclassIsExt,
     traits::{BoxExt, GestureExt, GestureSingleExt, GtkWindowExt, WidgetExt},
-    Application, Box, Label,
+    Application, Box, Image, Label, Picture,
 };
 use gtk4_layer_shell::Edge;
 
@@ -24,20 +25,33 @@ pub fn show_notification(
     window: &Window,
     notification: Notification,
 ) {
+    println!(
+        "urgency: {} and image path: {}",
+        notification.urgency.to_str(),
+        notification.image_path.clone().unwrap_or_default()
+    );
     let notibox = NotificationButton::new(gtk::Orientation::Horizontal, 5);
-    notibox.set_css_classes(&["NotificationBox"]);
+    notibox.set_css_classes(&["NotificationBox", notification.urgency.to_str()]);
     let bodybox = Box::new(gtk::Orientation::Vertical, 5);
     let imagebox = Box::new(gtk::Orientation::Vertical, 5);
+    let appbox = Box::new(gtk::Orientation::Horizontal, 2);
 
     let summary = Label::new(Some(&notification.summary));
     let app_name = Label::new(Some(&notification.app_name));
-    let text = Label::new(Some(&notification.body));
     let timestamp = Label::new(Some(&notification.expire_timeout.to_string()));
+    let text = Label::new(Some(&notification.body));
 
+    let image = Image::from_icon_name(notification.app_icon.as_str());
+    imagebox.append(&image);
+    let picture = Picture::new();
+    picture.set_filename(notification.image_path.clone());
+    imagebox.append(&picture);
+
+    appbox.append(&app_name);
+    appbox.append(&timestamp);
+    bodybox.append(&appbox);
     bodybox.append(&summary);
-    bodybox.append(&app_name);
     bodybox.append(&text);
-    bodybox.append(&timestamp);
     notibox.append(&bodybox);
     notibox.append(&imagebox);
 

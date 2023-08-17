@@ -9,4 +9,13 @@
   margin: 5px;
 }
 
+.NotificationLow {
+}
 
+.NotificationNormal {
+  border-color: purple;
+}
+
+.NotificationUrgent {
+  border-color: red;
+}
