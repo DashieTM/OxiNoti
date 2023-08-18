@@ -1,4 +1,5 @@
 #![feature(cell_update)]
+#![feature(string_remove_matches)]
 use std::{env, path::PathBuf, fs};
 
 use ui::initialize_ui;

@@ -1,4 +1,5 @@
 use std::cell::Cell;
+use std::sync::RwLock;
 
 use gtk::glib;
 use gtk::subclass::prelude::*;
@@ -6,6 +7,7 @@ use gtk::subclass::prelude::*;
 #[derive(Default)]
 pub struct NotificationButton {
     pub notification_id: Cell<u32>,
+    pub removed: Cell<bool>,
     // pub notification_count: Cell<i32>,
 }
 

@@ -1,12 +1,11 @@
 mod utils;
 
-use std::{cell::Cell, rc::Rc, thread, time::Duration};
+use std::{cell::Cell, rc::Rc, sync::Arc, thread, time::Duration};
 
 use adw::{traits::AdwWindowExt, Window};
 use gtk::{
-    builders::PictureBuilder,
-    gio::{File, SimpleAction},
-    glib::{self, clone, MainContext, timeout_future_seconds},
+    gio::SimpleAction,
+    glib::{self, clone, Sender},
     prelude::{ApplicationExt, ApplicationExtManual},
     subclass::prelude::ObjectSubclassIsExt,
     traits::{BoxExt, GestureExt, GestureSingleExt, GtkWindowExt, WidgetExt},
@@ -19,17 +18,44 @@ use crate::daemon::{Notification, NotificationServer};
 use self::utils::NotificationButton;
 
 const APP_ID: &str = "org.dashie.oxinoti";
+
+pub fn remove_notification(
+    window: &Window,
+    noticount: Rc<Cell<i32>>,
+    notibox: Arc<NotificationButton>,
+) {
+    if notibox.imp().removed.get() {
+        println!("wat");
+        return;
+    }
+    notibox.imp().removed.set(true);
+    noticount.update(|x| x - 1);
+    if noticount.get() == 0 {
+        window.hide();
+    }
+    let id = notibox.imp().notification_id.get();
+    notibox.unmap();
+    thread::spawn(move || {
+        use dbus::blocking::Connection;
+
+        let conn = Connection::new_session().unwrap();
+        let proxy = conn.with_proxy(
+            "org.freedesktop.Notifications2",
+            "/org/freedesktop/Notifications2",
+            Duration::from_millis(1000),
+        );
+        let _: Result<(), dbus::Error> =
+            proxy.method_call("org.freedesktop.Notifications2", "CloseNotification", (id,));
+    });
+}
+
 pub fn show_notification(
     noticount: Rc<Cell<i32>>,
     mainbox: &Box,
     window: &Window,
     notification: Notification,
+    tx2: Arc<Sender<Arc<NotificationButton>>>,
 ) {
-    println!(
-        "urgency: {} and image path: {}",
-        notification.urgency.to_str(),
-        notification.image_path.clone().unwrap_or_default()
-    );
     let notibox = NotificationButton::new(gtk::Orientation::Horizontal, 5);
     notibox.set_css_classes(&["NotificationBox", notification.urgency.to_str()]);
     let bodybox = Box::new(gtk::Orientation::Vertical, 5);
@@ -39,7 +65,9 @@ pub fn show_notification(
     let summary = Label::new(Some(&notification.summary));
     let app_name = Label::new(Some(&notification.app_name));
     let timestamp = Label::new(Some(&notification.expire_timeout.to_string()));
-    let text = Label::new(Some(&notification.body));
+    let (body, text_css) = class_from_html(notification.body);
+    let text = Label::new(Some(body.as_str()));
+    text.set_css_classes(&[&text_css]);
 
     let image = Image::from_icon_name(notification.app_icon.as_str());
     imagebox.append(&image);
@@ -56,53 +84,27 @@ pub fn show_notification(
     notibox.append(&imagebox);
 
     notibox.imp().notification_id.set(notification.replaces_id);
+    notibox.imp().removed.set(false);
     noticount.update(|x| x + 1);
 
     let gesture = gtk::GestureClick::new();
+    gesture.set_button(gtk::gdk::ffi::GDK_BUTTON_PRIMARY as u32);
     gesture.connect_pressed(
-        clone!(@strong noticount, @weak notibox, @weak mainbox, @weak window => move |gesture, _, _, _| {
+        clone!(@weak noticount, @weak notibox, @weak window => move |gesture, _, _, _| {
+            println!("clicked");
+            remove_notification( &window, noticount, Arc::new(notibox));
             gesture.set_state(gtk::EventSequenceState::Claimed);
-            mainbox.remove(&notibox);
-            noticount.update(|x| x - 1);
-            if noticount.get() == 0 {
-            window.hide();
-            }
-            let id = notibox.imp().notification_id.get();
-            thread::spawn(move || {
-                use dbus::blocking::Connection;
-                use std::time::Duration;
-
-                let conn = Connection::new_session().unwrap();
-                let proxy = conn.with_proxy("org.freedesktop.Notifications2", "/org/freedesktop/Notifications2", Duration::from_millis(1000));
-                let _: Result<(), dbus::Error> =
-                    proxy.method_call("org.freedesktop.Notifications2", "CloseNotification", (id,));
-            });
         }),
     );
     notibox.add_controller(gesture);
 
     mainbox.append(&notibox);
     window.set_content(Some(mainbox));
-    let main_context = MainContext::default();
-    // The main loop executes the asynchronous block
-    main_context.spawn_local(clone!(@weak noticount, @weak notibox, @weak mainbox, @weak window => async move {
-            timeout_future_seconds(3).await;
-            mainbox.remove(&notibox);
-            noticount.update(|x| x - 1);
-            if noticount.get() == 0 {
-            window.hide();
-            }
-            let id = notibox.imp().notification_id.get();
-            thread::spawn(move || {
-                use dbus::blocking::Connection;
-                use std::time::Duration;
-
-                let conn = Connection::new_session().unwrap();
-                let proxy = conn.with_proxy("org.freedesktop.Notifications2", "/org/freedesktop/Notifications2", Duration::from_millis(1000));
-                let _: Result<(), dbus::Error> =
-                    proxy.method_call("org.freedesktop.Notifications2", "CloseNotification", (id,));
-            });
-        }));
+    let notiarc = Arc::new(notibox);
+    thread::spawn(move || {
+        thread::sleep(Duration::from_secs(3));
+        tx2.send(notiarc).unwrap();
+    });
     window.show();
 }
 
@@ -117,6 +119,8 @@ pub fn initialize_ui(css_string: String) {
 
     app.connect_activate(move |app| {
         let (tx, rx) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
+        let (tx2_initial, rx2) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
+        let tx2 = Arc::new(tx2_initial);
         thread::spawn(move || {
             let mut server = NotificationServer::create(tx);
             server.run();
@@ -135,10 +139,11 @@ pub fn initialize_ui(css_string: String) {
         gtk4_layer_shell::set_anchor(&window, Edge::Top, true);
 
         let windowrc = window.clone();
-        let windowrc1 = windowrc.clone();
+        let windowrc2 = windowrc.clone();
 
         // used in order to not close the window if we still have notifications
         let noticount = Rc::new(Cell::new(0));
+        let noticount2 = noticount.clone();
 
         let action_present = SimpleAction::new("present", None);
 
@@ -146,22 +151,33 @@ pub fn initialize_ui(css_string: String) {
             window.present();
         }));
 
-        let focus_event_controller = gtk::EventControllerFocus::new();
-        focus_event_controller.connect_leave(move |_| {
-            windowrc.hide();
-        });
+        // let focus_event_controller = gtk::EventControllerFocus::new();
+        // focus_event_controller.connect_leave(move |_| {
+        //     windowrc.hide();
+        // });
 
-        let gesture = gtk::GestureClick::new();
-        gesture.set_button(gtk::gdk::ffi::GDK_BUTTON_PRIMARY as u32);
-        gesture.connect_pressed(move |_gesture, _, _, _| {
-            windowrc1.hide();
-        });
+        // let gesture = gtk::GestureClick::new();
+        // gesture.set_button(gtk::gdk::ffi::GDK_BUTTON_PRIMARY as u32);
+        // gesture.connect_pressed(move |_gesture, _, _, _| {
+        //     println!("wat");
+        //     windowrc1.hide();
+        // });
         let mainbox = Box::new(gtk::Orientation::Vertical, 5);
-        window.add_controller(focus_event_controller);
-        window.add_controller(gesture);
+        // window.add_controller(focus_event_controller);
+        // window.add_controller(gesture);
 
         rx.attach(None, move |notification| {
-            show_notification(noticount.clone(), &mainbox, &window, notification);
+            show_notification(
+                noticount.clone(),
+                &mainbox,
+                &window,
+                notification,
+                tx2.clone(),
+            );
+            glib::Continue(true)
+        });
+        rx2.attach(None, move |notibox| {
+            remove_notification(&windowrc2, noticount2.clone(), notibox);
             glib::Continue(true)
         });
     });
@@ -179,4 +195,37 @@ pub fn initialize_ui(css_string: String) {
         );
     }
     app.run_with_args(&[""]);
+}
+
+fn class_from_html(mut body: String) -> (String, String) {
+    let mut open = false;
+    let mut ret: &str = "";
+    for char in body.chars() {
+        if char == '<' && !open {
+            open = true;
+        } else if open {
+            ret = match char {
+                'b' => "bold",
+                'i' => "italic",
+                'u' => "underline",
+                'h' => "hyprlink",
+                _ => {
+                    ret = "";
+                    break;
+                }
+            };
+            break;
+        }
+    }
+    body.remove_matches("<b>");
+    body.remove_matches("</b>");
+    body.remove_matches("<i>");
+    body.remove_matches("</i>");
+    body.remove_matches("<a href=\">");
+    body.remove_matches("</a>");
+    body.remove_matches("<u>");
+    body.remove_matches("</u>");
+    // let new_body = body.remove_matches("<img src=\">");
+    // let new_body = body.remove_matches("<alt=\">");
+    (body, String::from(ret))
 }

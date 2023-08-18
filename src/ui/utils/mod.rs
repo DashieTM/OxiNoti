@@ -10,7 +10,6 @@ glib::wrapper! {
 }
 
 impl NotificationButton {
-    #![feature(cell_update)]
     pub fn new(orientation: Orientation, spacing: i32) -> Self {
         Object::builder()
             .property("orientation", orientation)
@@ -24,3 +23,6 @@ impl Default for NotificationButton {
         Self::new(Orientation::Vertical, 5)
     }
 }
+
+unsafe impl Send for NotificationButton {}
+unsafe impl Sync for NotificationButton {}

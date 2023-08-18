@@ -4,9 +4,11 @@
 }
 
 .NotificationBox {
+  background-color: black; 
   border-radius: 5px;
   border: solid 1px;
   margin: 5px;
+  padding: 5px;
 }
 
 .NotificationLow {
@@ -18,4 +20,16 @@
 
 .NotificationUrgent {
   border-color: red;
+}
+
+.bold {
+  font-weight: bold;
+}
+
+.italic {
+  font-style: italic;
+}
+
+.underline {
+  text-decoration-line: underline;
 }
