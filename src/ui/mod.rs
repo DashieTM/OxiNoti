@@ -1,12 +1,12 @@
 mod utils;
 
-use std::{cell::Cell, rc::Rc, thread};
+use std::{cell::Cell, rc::Rc, thread, time::Duration};
 
 use adw::{traits::AdwWindowExt, Window};
 use gtk::{
     builders::PictureBuilder,
     gio::{File, SimpleAction},
-    glib::{self, clone},
+    glib::{self, clone, MainContext, timeout_future_seconds},
     prelude::{ApplicationExt, ApplicationExtManual},
     subclass::prelude::ObjectSubclassIsExt,
     traits::{BoxExt, GestureExt, GestureSingleExt, GtkWindowExt, WidgetExt},
@@ -83,6 +83,26 @@ pub fn show_notification(
 
     mainbox.append(&notibox);
     window.set_content(Some(mainbox));
+    let main_context = MainContext::default();
+    // The main loop executes the asynchronous block
+    main_context.spawn_local(clone!(@weak noticount, @weak notibox, @weak mainbox, @weak window => async move {
+            timeout_future_seconds(3).await;
+            mainbox.remove(&notibox);
+            noticount.update(|x| x - 1);
+            if noticount.get() == 0 {
+            window.hide();
+            }
+            let id = notibox.imp().notification_id.get();
+            thread::spawn(move || {
+                use dbus::blocking::Connection;
+                use std::time::Duration;
+
+                let conn = Connection::new_session().unwrap();
+                let proxy = conn.with_proxy("org.freedesktop.Notifications2", "/org/freedesktop/Notifications2", Duration::from_millis(1000));
+                let _: Result<(), dbus::Error> =
+                    proxy.method_call("org.freedesktop.Notifications2", "CloseNotification", (id,));
+            });
+        }));
     window.show();
 }
 
