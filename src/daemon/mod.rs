@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::Display,
+    hash::Hash,
     sync::{Arc, Mutex},
 };
 
@@ -10,7 +11,7 @@ use dbus::{
 };
 use gtk::glib::Sender;
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Urgency {
     Low,
     Normal,
@@ -48,6 +49,7 @@ impl Display for Urgency {
     }
 }
 
+#[derive(Eq, PartialEq, PartialOrd, Ord)]
 pub struct Notification {
     pub app_name: String,
     pub replaces_id: u32,
@@ -55,7 +57,6 @@ pub struct Notification {
     pub summary: String,
     pub body: String,
     pub actions: Vec<String>,
-    pub hints: arg::PropMap,
     pub expire_timeout: i32,
     pub urgency: Urgency,
     pub image_path: Option<String>,
@@ -70,11 +71,24 @@ impl Clone for Notification {
             summary: self.summary.clone(),
             body: self.body.clone(),
             actions: self.actions.clone(),
-            hints: arg::PropMap::new(),
             expire_timeout: self.expire_timeout.clone(),
             urgency: self.urgency.clone(),
             image_path: self.image_path.clone(),
         }
+    }
+}
+
+impl Hash for Notification {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.app_name.hash(state);
+        self.replaces_id.hash(state);
+        self.app_icon.hash(state);
+        self.summary.hash(state);
+        self.body.hash(state);
+        self.actions.hash(state);
+        self.expire_timeout.hash(state);
+        self.urgency.to_i32().hash(state);
+        self.image_path.hash(state);
     }
 }
 
@@ -89,6 +103,23 @@ impl Notification {
         hints: arg::PropMap,
         expire_timeout: i32,
     ) -> Self {
+        let mut urgency = Urgency::Low;
+        let urgency_opt = hints.get("urgency");
+        if urgency_opt.is_some() {
+            let urg = Urgency::from_i32(urgency_opt.unwrap().as_i64().unwrap_or_else(|| 1) as i32);
+            urgency = urg.unwrap_or_else(|_| -> Urgency { Urgency::Low });
+        }
+        let mut image_path = None;
+        let image_path_opt = hints.get("image-path");
+        if image_path_opt.is_some() {
+            image_path = Some(
+                image_path_opt
+                    .unwrap()
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+            );
+        }
         Self {
             app_name,
             replaces_id,
@@ -96,10 +127,9 @@ impl Notification {
             summary,
             body,
             actions,
-            hints,
             expire_timeout,
-            urgency: Urgency::Low,
-            image_path: None,
+            urgency,
+            image_path,
         }
     }
 
@@ -111,7 +141,6 @@ impl Notification {
             summary: String::from(""),
             body: String::from(""),
             actions: Vec::new(),
-            hints: arg::PropMap::new(),
             expire_timeout: 0,
             urgency: Urgency::Low,
             image_path: None,
@@ -129,8 +158,8 @@ impl Notification {
 }
 
 pub struct NotificationWrapper {
-    pub notifications: Vec<Notification>,
-    pub id_map: HashMap<u32, i32>,
+    pub notifications: HashMap<u32, Notification>,
+    pub last_notification_id: u32,
     pub do_not_disturb: bool,
     pub handle: Sender<Notification>,
 }
@@ -138,47 +167,37 @@ pub struct NotificationWrapper {
 impl NotificationWrapper {
     pub fn create(handle: Sender<Notification>) -> Self {
         Self {
-            notifications: Vec::new(),
-            id_map: HashMap::<u32, i32>::new(),
+            notifications: HashMap::new(),
+            last_notification_id: 0,
             do_not_disturb: false,
             handle,
         }
     }
     pub fn add_notification(&mut self, notification: &mut Notification) {
-        self.id_map
-            .insert(notification.replaces_id, self.notifications.len() as i32);
-        let urgency = notification.hints.get("urgency");
-        if urgency.is_some() {
-            let urg = Urgency::from_i32(urgency.unwrap().as_i64().unwrap_or_else(|| 1) as i32);
-            notification.urgency = urg.unwrap_or_else(|_| -> Urgency { Urgency::Low });
-        }
-        let image_path = notification.hints.get("image-path");
-        if image_path.is_some() {
-            notification.image_path =
-                Some(image_path.unwrap().as_str().unwrap_or_default().to_string());
-        }
-        self.notifications.push(notification.clone());
+        self.notifications
+            .insert(notification.replaces_id, notification.clone());
+        self.last_notification_id = notification.replaces_id;
     }
     pub fn remove_notification(&mut self, id: u32) {
-        let index = self.id_map.remove(&id);
-        if index.is_none() {
-            return;
-        }
-        self.notifications.remove(index.unwrap() as usize);
+        self.notifications.remove(&id);
     }
     pub fn clear_all_notifications(&mut self) {
         self.notifications.clear();
-        self.id_map.clear();
     }
-    pub fn get_all_notifications(&self) -> &Vec<Notification> {
-        &self.notifications
+    pub fn get_all_notifications(&self) -> Vec<Notification> {
+        let mut notifications = Vec::new();
+        for notification in self.notifications.values().cloned() {
+            notifications.push(notification);
+        }
+        notifications
+
     }
     pub fn toggle_do_not_disturb(&mut self) -> bool {
         self.do_not_disturb = !self.do_not_disturb;
         self.do_not_disturb
     }
     pub fn get_latest_notification(&self) -> Option<&Notification> {
-        self.notifications.last()
+        self.notifications.get(&self.last_notification_id)
     }
 }
 

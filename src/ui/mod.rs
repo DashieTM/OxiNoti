@@ -8,7 +8,7 @@ use gtk::{
     glib::{self, clone, Sender},
     prelude::{ApplicationExt, ApplicationExtManual},
     subclass::prelude::ObjectSubclassIsExt,
-    traits::{BoxExt, GestureExt, GestureSingleExt, GtkWindowExt, WidgetExt},
+    traits::{BoxExt, ButtonExt, GtkWindowExt, WidgetExt},
     Application, Box, Image, Label, Picture,
 };
 use gtk4_layer_shell::Edge;
@@ -20,9 +20,10 @@ use self::utils::NotificationButton;
 const APP_ID: &str = "org.dashie.oxinoti";
 
 pub fn remove_notification(
+    mainbox: &Box,
     window: &Window,
     noticount: Rc<Cell<i32>>,
-    notibox: Arc<NotificationButton>,
+    notibox: &NotificationButton,
 ) {
     if notibox.imp().removed.get() {
         println!("wat");
@@ -34,7 +35,8 @@ pub fn remove_notification(
         window.hide();
     }
     let id = notibox.imp().notification_id.get();
-    notibox.unmap();
+    // notibox.unmap();
+    mainbox.remove(&*notibox);
     thread::spawn(move || {
         use dbus::blocking::Connection;
 
@@ -56,7 +58,8 @@ pub fn show_notification(
     notification: Notification,
     tx2: Arc<Sender<Arc<NotificationButton>>>,
 ) {
-    let notibox = NotificationButton::new(gtk::Orientation::Horizontal, 5);
+    let notibox = Arc::new(NotificationButton::new());
+    let basebox = Box::new(gtk::Orientation::Horizontal, 5);
     notibox.set_css_classes(&["NotificationBox", notification.urgency.to_str()]);
     let bodybox = Box::new(gtk::Orientation::Vertical, 5);
     let imagebox = Box::new(gtk::Orientation::Vertical, 5);
@@ -80,30 +83,26 @@ pub fn show_notification(
     bodybox.append(&appbox);
     bodybox.append(&summary);
     bodybox.append(&text);
-    notibox.append(&bodybox);
-    notibox.append(&imagebox);
+    basebox.append(&bodybox);
+    basebox.append(&imagebox);
+    notibox.set_child(Some(&basebox));
 
     notibox.imp().notification_id.set(notification.replaces_id);
     notibox.imp().removed.set(false);
     noticount.update(|x| x + 1);
 
-    let gesture = gtk::GestureClick::new();
-    gesture.set_button(gtk::gdk::ffi::GDK_BUTTON_PRIMARY as u32);
-    gesture.connect_pressed(
-        clone!(@weak noticount, @weak notibox, @weak window => move |gesture, _, _, _| {
+    notibox.connect_clicked(
+        clone!(@weak noticount, @weak mainbox, @weak window => move |notibox| {
             println!("clicked");
-            remove_notification( &window, noticount, Arc::new(notibox));
-            gesture.set_state(gtk::EventSequenceState::Claimed);
+            remove_notification(&mainbox, &window, noticount, notibox);
         }),
     );
-    notibox.add_controller(gesture);
 
-    mainbox.append(&notibox);
+    mainbox.append(&*notibox);
     window.set_content(Some(mainbox));
-    let notiarc = Arc::new(notibox);
     thread::spawn(move || {
-        thread::sleep(Duration::from_secs(3));
-        tx2.send(notiarc).unwrap();
+        thread::sleep(Duration::from_secs(10));
+        tx2.send(notibox).unwrap();
     });
     window.show();
 }
@@ -151,20 +150,8 @@ pub fn initialize_ui(css_string: String) {
             window.present();
         }));
 
-        // let focus_event_controller = gtk::EventControllerFocus::new();
-        // focus_event_controller.connect_leave(move |_| {
-        //     windowrc.hide();
-        // });
-
-        // let gesture = gtk::GestureClick::new();
-        // gesture.set_button(gtk::gdk::ffi::GDK_BUTTON_PRIMARY as u32);
-        // gesture.connect_pressed(move |_gesture, _, _, _| {
-        //     println!("wat");
-        //     windowrc1.hide();
-        // });
         let mainbox = Box::new(gtk::Orientation::Vertical, 5);
-        // window.add_controller(focus_event_controller);
-        // window.add_controller(gesture);
+        let mainbox2 = mainbox.clone();
 
         rx.attach(None, move |notification| {
             show_notification(
@@ -177,7 +164,7 @@ pub fn initialize_ui(css_string: String) {
             glib::Continue(true)
         });
         rx2.attach(None, move |notibox| {
-            remove_notification(&windowrc2, noticount2.clone(), notibox);
+            remove_notification(&mainbox2, &windowrc2, noticount2.clone(), &*notibox);
             glib::Continue(true)
         });
     });

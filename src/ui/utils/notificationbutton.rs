@@ -1,5 +1,4 @@
 use std::cell::Cell;
-use std::sync::RwLock;
 
 use gtk::glib;
 use gtk::subclass::prelude::*;
@@ -15,17 +14,8 @@ pub struct NotificationButton {
 impl ObjectSubclass for NotificationButton {
     const NAME: &'static str = "NotificationButton";
     type Type = super::NotificationButton;
-    type ParentType = gtk::Box;
+    type ParentType = gtk::Button;
 }
-
-// impl NotificationButton {
-//     pub fn increase(&self) {
-//         self.notification_count.update(|x| x + 1);
-//     }
-//     pub fn decrease(&self) {
-//         self.notification_count.update(|x| x - 1);
-//     }
-// }
 
 impl ObjectImpl for NotificationButton {}
 

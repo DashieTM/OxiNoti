@@ -1,7 +1,7 @@
 mod notificationbutton;
 
 use glib::Object;
-use gtk::{glib, Orientation};
+use gtk::glib;
 
 glib::wrapper! {
     pub struct NotificationButton(ObjectSubclass<notificationbutton::NotificationButton>)
@@ -10,17 +10,14 @@ glib::wrapper! {
 }
 
 impl NotificationButton {
-    pub fn new(orientation: Orientation, spacing: i32) -> Self {
-        Object::builder()
-            .property("orientation", orientation)
-            .property("spacing", spacing)
-            .build()
+    pub fn new() -> Self {
+        Object::builder().build()
     }
 }
 
 impl Default for NotificationButton {
     fn default() -> Self {
-        Self::new(Orientation::Vertical, 5)
+        Self::new()
     }
 }
 
