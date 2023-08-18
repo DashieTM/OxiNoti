@@ -1,6 +1,6 @@
 mod utils;
 
-use std::{cell::Cell, rc::Rc, sync::Arc, thread, time::Duration};
+use std::{cell::Cell, path::Path, rc::Rc, sync::Arc, thread, time::Duration};
 
 use adw::{traits::AdwWindowExt, Window};
 use gtk::{
@@ -26,7 +26,6 @@ pub fn remove_notification(
     notibox: &NotificationButton,
 ) {
     if notibox.imp().removed.get() {
-        println!("wat");
         return;
     }
     notibox.imp().removed.set(true);
@@ -62,21 +61,41 @@ pub fn show_notification(
     let basebox = Box::new(gtk::Orientation::Horizontal, 5);
     notibox.set_css_classes(&["NotificationBox", notification.urgency.to_str()]);
     let bodybox = Box::new(gtk::Orientation::Vertical, 5);
-    let imagebox = Box::new(gtk::Orientation::Vertical, 5);
+    bodybox.set_css_classes(&[&"bodybox"]);
+    let imagebox = Box::new(gtk::Orientation::Horizontal, 5);
+    imagebox.set_css_classes(&[&"imagebox"]);
     let appbox = Box::new(gtk::Orientation::Horizontal, 2);
+    appbox.set_css_classes(&[&"miscbox"]);
 
     let summary = Label::new(Some(&notification.summary));
+    summary.set_css_classes(&[&"summary"]);
     let app_name = Label::new(Some(&notification.app_name));
+    app_name.set_css_classes(&[&"appname"]);
     let timestamp = Label::new(Some(&notification.expire_timeout.to_string()));
+    timestamp.set_css_classes(&[&"timestamp"]);
     let (body, text_css) = class_from_html(notification.body);
     let text = Label::new(Some(body.as_str()));
-    text.set_css_classes(&[&text_css]);
+    text.set_css_classes(&[&text_css, &"text"]);
 
-    let image = Image::from_icon_name(notification.app_icon.as_str());
-    imagebox.append(&image);
-    let picture = Picture::new();
-    picture.set_filename(notification.image_path.clone());
-    imagebox.append(&picture);
+    let use_icon = || {
+        let image = Image::from_icon_name(notification.app_icon.as_str());
+        image.set_css_classes(&[&"image"]);
+        imagebox.append(&image);
+    };
+
+    if let Some(path_opt) = notification.image_path {
+        if Path::new(&path_opt).is_file() {
+            let picture = Picture::new();
+            picture.set_css_classes(&[&"picture"]);
+            picture.set_filename(Some(path_opt));
+            picture.set_size_request(50, 50);
+            imagebox.append(&picture);
+        } else {
+            (use_icon)();
+        }
+    } else {
+        (use_icon)();
+    }
 
     appbox.append(&app_name);
     appbox.append(&timestamp);
@@ -93,7 +112,6 @@ pub fn show_notification(
 
     notibox.connect_clicked(
         clone!(@weak noticount, @weak mainbox, @weak window => move |notibox| {
-            println!("clicked");
             remove_notification(&mainbox, &window, noticount, notibox);
         }),
     );
