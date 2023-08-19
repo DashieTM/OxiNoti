@@ -3,7 +3,8 @@ use std::{
     fmt::Display,
     hash::Hash,
     sync::{Arc, Mutex},
-    time::Duration, thread,
+    thread,
+    time::Duration,
 };
 
 use dbus::{
@@ -202,9 +203,6 @@ impl NotificationWrapper {
     pub fn toggle_notification_center(&mut self) -> bool {
         self.notification_center = !self.notification_center;
         self.notification_center
-    }
-    pub fn get_latest_notification(&self) -> Option<&Notification> {
-        self.notifications.get(&self.last_notification_id)
     }
 }
 
