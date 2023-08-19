@@ -1,8 +1,8 @@
 mod utils;
 
 use std::{
-    borrow::{Borrow, BorrowMut},
-    cell::{Cell, RefCell},
+    borrow::BorrowMut,
+    cell::Cell,
     collections::HashMap,
     path::Path,
     rc::Rc,
@@ -67,7 +67,7 @@ pub fn show_notification(
     window: &Window,
     notification: Notification,
     tx2: Arc<Sender<Arc<NotificationButton>>>,
-    mut id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
+    id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
 ) {
     let notibox = Arc::new(NotificationButton::new());
     let noticlone = notibox.clone();
@@ -160,7 +160,7 @@ pub fn show_notification(
 pub fn modify_notification(
     progress_opt: Option<i32>,
     id: u32,
-    mut id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
+    id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
 ) {
     if let Some(progress) = progress_opt {
         if progress < 0 {
@@ -215,7 +215,7 @@ pub fn initialize_ui(css_string: String) {
         let noticount = Rc::new(Cell::new(0));
         let noticount2 = noticount.clone();
 
-        let mut id_map = Arc::new(RwLock::new(HashMap::<u32, Arc<NotificationButton>>::new()));
+        let id_map = Arc::new(RwLock::new(HashMap::<u32, Arc<NotificationButton>>::new()));
         let id_map_clone = id_map.clone();
 
         let action_present = SimpleAction::new("present", None);

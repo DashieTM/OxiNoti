@@ -148,21 +148,6 @@ impl Notification {
         }
     }
 
-    pub fn new_empty() -> Self {
-        Self {
-            app_name: String::from(""),
-            replaces_id: 0,
-            app_icon: String::from(""),
-            summary: String::from(""),
-            body: String::from(""),
-            actions: Vec::new(),
-            expire_timeout: 0,
-            urgency: Urgency::Low,
-            image_path: None,
-            progress: None,
-        }
-    }
-
     pub fn print(&self) {
         print!(
             "Notification {} with summary {} from app {}\n
@@ -364,14 +349,6 @@ impl NotificationServer {
             self.wrapper.clone(),
         );
         cr.serve(&c).unwrap();
-    }
-
-    pub fn remove_notification(&mut self, id: u32) {
-        self.wrapper.lock().unwrap().remove_notification(id);
-    }
-
-    pub fn clear_all_notifications(&mut self) {
-        self.wrapper.lock().unwrap().clear_all_notifications();
     }
 }
 

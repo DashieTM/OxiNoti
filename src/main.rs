@@ -1,9 +1,9 @@
 #![feature(cell_update)]
 #![feature(string_remove_matches)]
-use std::{env, path::PathBuf, fs};
+use std::{env, fs, path::PathBuf};
 
-use ui::initialize_ui;
 use directories_next as dirs;
+use ui::initialize_ui;
 
 mod daemon;
 mod ui;
@@ -33,8 +33,6 @@ fn main() {
         css_string = create_config_dir().to_str().unwrap().into();
         println!("{css_string}");
     }
-
-
 
     initialize_ui(css_string);
 }
