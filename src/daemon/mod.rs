@@ -3,6 +3,7 @@ use std::{
     fmt::Display,
     hash::Hash,
     sync::{Arc, Mutex},
+    time::Duration, thread,
 };
 
 use dbus::{
@@ -271,11 +272,36 @@ impl NotificationServer {
                     notification.print();
                     let mut server = serverref.lock().unwrap();
                     server.add_notification(&mut notification);
-                    if !server.do_not_disturb || server.notification_center {
+                    if !server.do_not_disturb && !server.notification_center {
                         server
                             .handle
                             .send(notification)
                             .expect("Failed to send notification.");
+                    } else {
+                        thread::spawn(move || {
+                            let conn = Connection::new_session().unwrap();
+                            let proxy = conn.with_proxy(
+                                "org.freedesktop.NotificationCenter",
+                                "/org/freedesktop/NotificationCenter",
+                                Duration::from_millis(1000),
+                            );
+                            let _: Result<(), dbus::Error> = proxy.method_call(
+                                "org.freedesktop.NotificationCenter",
+                                "Notify",
+                                (
+                                    notification.app_name,
+                                    notification.replaces_id,
+                                    notification.app_icon,
+                                    notification.summary,
+                                    notification.body,
+                                    notification.actions,
+                                    notification.expire_timeout,
+                                    notification.urgency.to_i32(),
+                                    notification.image_path.unwrap_or_else(|| "".to_string()),
+                                    notification.progress.unwrap_or_else(|| -1),
+                                ),
+                            );
+                        });
                     }
                     Ok(("ok",))
                 },
@@ -351,10 +377,10 @@ impl NotificationServer {
             c.method(
                 "ToggleNotificationCenter",
                 (),
-                (),
+                ("result",),
                 move |_, serverref: &mut Arc<Mutex<NotificationWrapper>>, ()| {
-                    serverref.lock().unwrap().toggle_notification_center();
-                    Ok(())
+                    let res = serverref.lock().unwrap().toggle_notification_center();
+                    Ok((res,))
                 },
             );
         });
