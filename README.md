@@ -1,6 +1,6 @@
-# oxinoti
+# OxiNoti
 A work in progress notification daemon made with rust and gtk.\
-Can also be later used in tandem with oxidash, a notification center also made with rust and gtk.
+Can also be used in tandem with [OxiDash](https://git.dashie.org/DashieTM/OxiDash), a notification center also made with rust and gtk.
 
 ## notes
 - WIP, don't use this for regular use yet
