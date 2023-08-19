@@ -38,7 +38,7 @@ fn main() {
 }
 
 fn create_config_dir() -> PathBuf {
-    let maybe_config_dir = dirs::ProjectDirs::from("com", "dashie", "oxidash");
+    let maybe_config_dir = dirs::ProjectDirs::from("com", "dashie", "oxinoti");
     if maybe_config_dir.is_none() {
         panic!("Could not get config directory");
     }
