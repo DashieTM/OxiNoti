@@ -34,6 +34,7 @@ pub fn remove_notification(
     noticount: Rc<Cell<i32>>,
     notibox: &NotificationButton,
     id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
+    timed_out: bool,
 ) {
     if notibox.imp().removed.get() {
         return;
@@ -47,6 +48,9 @@ pub fn remove_notification(
     id_map.write().unwrap().remove(&id);
     // notibox.unmap();
     mainbox.remove(&*notibox);
+    if timed_out {
+        return;
+    }
     thread::spawn(move || {
         use dbus::blocking::Connection;
 
@@ -140,7 +144,7 @@ pub fn show_notification(
 
     notibox.connect_clicked(
         clone!(@weak noticount, @weak mainbox, @weak window => move |notibox| {
-            remove_notification(&mainbox, &window, noticount, notibox, id_map.clone());
+            remove_notification(&mainbox, &window, noticount, notibox, id_map.clone(), false);
         }),
     );
 
@@ -258,6 +262,7 @@ pub fn initialize_ui(css_string: String) {
                 noticount2.clone(),
                 &*notibox,
                 id_map_clone.clone(),
+                true,
             );
             glib::Continue(true)
         });

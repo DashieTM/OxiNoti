@@ -162,6 +162,7 @@ pub struct NotificationWrapper {
     pub notifications: HashMap<u32, Notification>,
     pub last_notification_id: u32,
     pub do_not_disturb: bool,
+    pub notification_center: bool,
     pub handle: Sender<Notification>,
 }
 
@@ -171,6 +172,7 @@ impl NotificationWrapper {
             notifications: HashMap::new(),
             last_notification_id: 0,
             do_not_disturb: false,
+            notification_center: false,
             handle,
         }
     }
@@ -195,6 +197,10 @@ impl NotificationWrapper {
     pub fn toggle_do_not_disturb(&mut self) -> bool {
         self.do_not_disturb = !self.do_not_disturb;
         self.do_not_disturb
+    }
+    pub fn toggle_notification_center(&mut self) -> bool {
+        self.notification_center = !self.notification_center;
+        self.notification_center
     }
     pub fn get_latest_notification(&self) -> Option<&Notification> {
         self.notifications.get(&self.last_notification_id)
@@ -265,7 +271,7 @@ impl NotificationServer {
                     notification.print();
                     let mut server = serverref.lock().unwrap();
                     server.add_notification(&mut notification);
-                    if !server.do_not_disturb {
+                    if !server.do_not_disturb || server.notification_center {
                         server
                             .handle
                             .send(notification)
@@ -340,6 +346,15 @@ impl NotificationServer {
                 move |_, serverref: &mut Arc<Mutex<NotificationWrapper>>, ()| {
                     let result = serverref.lock().unwrap().toggle_do_not_disturb();
                     Ok((result,))
+                },
+            );
+            c.method(
+                "ToggleNotificationCenter",
+                (),
+                (),
+                move |_, serverref: &mut Arc<Mutex<NotificationWrapper>>, ()| {
+                    serverref.lock().unwrap().toggle_notification_center();
+                    Ok(())
                 },
             );
         });
