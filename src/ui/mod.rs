@@ -1,6 +1,15 @@
 mod utils;
 
-use std::{cell::Cell, path::Path, rc::Rc, sync::Arc, thread, time::Duration};
+use std::{
+    borrow::{Borrow, BorrowMut},
+    cell::{Cell, RefCell},
+    collections::HashMap,
+    path::Path,
+    rc::Rc,
+    sync::{Arc, RwLock},
+    thread,
+    time::Duration,
+};
 
 use adw::{traits::AdwWindowExt, Window};
 use gtk::{
@@ -9,7 +18,7 @@ use gtk::{
     prelude::{ApplicationExt, ApplicationExtManual},
     subclass::prelude::ObjectSubclassIsExt,
     traits::{BoxExt, ButtonExt, GtkWindowExt, WidgetExt},
-    Application, Box, Image, Label, Picture,
+    Application, Box, Image, Label, Picture, ProgressBar,
 };
 use gtk4_layer_shell::Edge;
 
@@ -24,6 +33,7 @@ pub fn remove_notification(
     window: &Window,
     noticount: Rc<Cell<i32>>,
     notibox: &NotificationButton,
+    id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
 ) {
     if notibox.imp().removed.get() {
         return;
@@ -34,6 +44,7 @@ pub fn remove_notification(
         window.hide();
     }
     let id = notibox.imp().notification_id.get();
+    id_map.write().unwrap().remove(&id);
     // notibox.unmap();
     mainbox.remove(&*notibox);
     thread::spawn(move || {
@@ -56,9 +67,12 @@ pub fn show_notification(
     window: &Window,
     notification: Notification,
     tx2: Arc<Sender<Arc<NotificationButton>>>,
+    mut id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
 ) {
     let notibox = Arc::new(NotificationButton::new());
-    let basebox = Box::new(gtk::Orientation::Horizontal, 5);
+    let noticlone = notibox.clone();
+    let basebox = Box::new(gtk::Orientation::Vertical, 5);
+    let regularbox = Box::new(gtk::Orientation::Horizontal, 5);
     notibox.set_css_classes(&["NotificationBox", notification.urgency.to_str()]);
     let bodybox = Box::new(gtk::Orientation::Vertical, 5);
     bodybox.set_css_classes(&[&"bodybox"]);
@@ -76,6 +90,16 @@ pub fn show_notification(
     let (body, text_css) = class_from_html(notification.body);
     let text = Label::new(Some(body.as_str()));
     text.set_css_classes(&[&text_css, &"text"]);
+
+    appbox.append(&app_name);
+    appbox.append(&timestamp);
+    bodybox.append(&appbox);
+    bodybox.append(&summary);
+    bodybox.append(&text);
+    regularbox.append(&bodybox);
+    regularbox.append(&imagebox);
+    basebox.append(&regularbox);
+    notibox.set_child(Some(&basebox));
 
     let use_icon = || {
         let image = Image::from_icon_name(notification.app_icon.as_str());
@@ -97,25 +121,33 @@ pub fn show_notification(
         (use_icon)();
     }
 
-    appbox.append(&app_name);
-    appbox.append(&timestamp);
-    bodybox.append(&appbox);
-    bodybox.append(&summary);
-    bodybox.append(&text);
-    basebox.append(&bodybox);
-    basebox.append(&imagebox);
-    notibox.set_child(Some(&basebox));
+    if let Some(progress) = notification.progress {
+        if progress < 0 {
+            return;
+        }
+        let progbar = ProgressBar::new();
+        progbar.set_fraction(progress as f64 / 100.0);
+        let mut shared_progbar = notibox.imp().fraction.borrow_mut();
+        *shared_progbar = progbar;
+        basebox.append(&*shared_progbar);
+    }
 
     notibox.imp().notification_id.set(notification.replaces_id);
     notibox.imp().removed.set(false);
     noticount.update(|x| x + 1);
 
+    let id_map_clone = id_map.clone();
+
     notibox.connect_clicked(
         clone!(@weak noticount, @weak mainbox, @weak window => move |notibox| {
-            remove_notification(&mainbox, &window, noticount, notibox);
+            remove_notification(&mainbox, &window, noticount, notibox, id_map.clone());
         }),
     );
 
+    id_map_clone
+        .write()
+        .unwrap()
+        .insert(notification.replaces_id, noticlone);
     mainbox.append(&*notibox);
     window.set_content(Some(mainbox));
     thread::spawn(move || {
@@ -123,6 +155,27 @@ pub fn show_notification(
         tx2.send(notibox).unwrap();
     });
     window.show();
+}
+
+pub fn modify_notification(
+    progress_opt: Option<i32>,
+    id: u32,
+    mut id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
+) {
+    if let Some(progress) = progress_opt {
+        if progress < 0 {
+            return;
+        }
+        let map = id_map.write().unwrap();
+        let mut notibox = map.get(&id);
+        notibox
+            .borrow_mut()
+            .unwrap()
+            .imp()
+            .fraction
+            .borrow_mut()
+            .set_fraction(progress as f64 / 100.0);
+    }
 }
 
 pub fn initialize_ui(css_string: String) {
@@ -162,6 +215,9 @@ pub fn initialize_ui(css_string: String) {
         let noticount = Rc::new(Cell::new(0));
         let noticount2 = noticount.clone();
 
+        let mut id_map = Arc::new(RwLock::new(HashMap::<u32, Arc<NotificationButton>>::new()));
+        let id_map_clone = id_map.clone();
+
         let action_present = SimpleAction::new("present", None);
 
         action_present.connect_activate(clone!(@weak window => move |_, _| {
@@ -172,17 +228,37 @@ pub fn initialize_ui(css_string: String) {
         let mainbox2 = mainbox.clone();
 
         rx.attach(None, move |notification| {
-            show_notification(
-                noticount.clone(),
-                &mainbox,
-                &window,
-                notification,
-                tx2.clone(),
-            );
+            if id_map
+                .read()
+                .unwrap()
+                .get(&notification.replaces_id)
+                .is_none()
+            {
+                show_notification(
+                    noticount.clone(),
+                    &mainbox,
+                    &window,
+                    notification,
+                    tx2.clone(),
+                    id_map.clone(),
+                );
+            } else {
+                modify_notification(
+                    notification.progress,
+                    notification.replaces_id,
+                    id_map.clone(),
+                );
+            }
             glib::Continue(true)
         });
         rx2.attach(None, move |notibox| {
-            remove_notification(&mainbox2, &windowrc2, noticount2.clone(), &*notibox);
+            remove_notification(
+                &mainbox2,
+                &windowrc2,
+                noticount2.clone(),
+                &*notibox,
+                id_map_clone.clone(),
+            );
             glib::Continue(true)
         });
     });

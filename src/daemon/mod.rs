@@ -60,6 +60,7 @@ pub struct Notification {
     pub expire_timeout: i32,
     pub urgency: Urgency,
     pub image_path: Option<String>,
+    pub progress: Option<i32>,
 }
 
 impl Clone for Notification {
@@ -74,6 +75,7 @@ impl Clone for Notification {
             expire_timeout: self.expire_timeout.clone(),
             urgency: self.urgency.clone(),
             image_path: self.image_path.clone(),
+            progress: self.progress.clone(),
         }
     }
 }
@@ -89,6 +91,7 @@ impl Hash for Notification {
         self.expire_timeout.hash(state);
         self.urgency.to_i32().hash(state);
         self.image_path.hash(state);
+        self.progress.hash(state);
     }
 }
 
@@ -120,6 +123,17 @@ impl Notification {
                     .to_string(),
             );
         }
+        let mut progress = None;
+        let progress_opt = hints.get("progress");
+        if progress_opt.is_some() {
+            progress = Some(
+                progress_opt
+                    .unwrap()
+                    .as_i64()
+                    .unwrap_or_else(|| -1)
+                    .clamp(-1, 100) as i32,
+            );
+        }
         Self {
             app_name,
             replaces_id,
@@ -130,6 +144,7 @@ impl Notification {
             expire_timeout,
             urgency,
             image_path,
+            progress,
         }
     }
 
@@ -144,6 +159,7 @@ impl Notification {
             expire_timeout: 0,
             urgency: Urgency::Low,
             image_path: None,
+            progress: None,
         }
     }
 
@@ -190,7 +206,6 @@ impl NotificationWrapper {
             notifications.push(notification);
         }
         notifications
-
     }
     pub fn toggle_do_not_disturb(&mut self) -> bool {
         self.do_not_disturb = !self.do_not_disturb;
@@ -297,7 +312,13 @@ impl NotificationServer {
                             notification.summary.clone(),
                             notification.body.clone(),
                             notification.actions.clone(),
+                            notification.expire_timeout.clone(),
                             notification.urgency.clone().to_i32(),
+                            notification
+                                .image_path
+                                .clone()
+                                .unwrap_or_else(|| "".to_string()),
+                            notification.progress.clone().unwrap_or_else(|| 0),
                         ));
                     }
                     Ok((notifications,))
