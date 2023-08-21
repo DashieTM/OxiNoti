@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 
 use gtk::subclass::prelude::*;
-use gtk::{glib, Label, ProgressBar, Image, Picture};
+use gtk::{glib, Image, Label, ProgressBar};
 
 #[derive(Default)]
 pub struct NotificationButton {
@@ -28,3 +28,5 @@ impl WidgetImpl for NotificationButton {}
 impl BoxImpl for NotificationButton {}
 
 impl ButtonImpl for NotificationButton {}
+
+impl NativeImpl for NotificationButton {}

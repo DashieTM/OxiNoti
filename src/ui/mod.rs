@@ -41,13 +41,15 @@ pub fn remove_notification(
     }
     notibox.imp().removed.set(true);
     noticount.update(|x| x - 1);
-    if noticount.get() == 0 {
-        window.hide();
+    let count = noticount.get();
+    if count == 0 {
+        window.set_visible(false);
     }
     let id = notibox.imp().notification_id.get();
     id_map.write().unwrap().remove(&id);
     // notibox.unmap();
     mainbox.remove(&*notibox);
+    window.queue_resize();
     if timed_out {
         return;
     }
@@ -74,6 +76,7 @@ pub fn show_notification(
     id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
 ) {
     let notibox = Arc::new(NotificationButton::new());
+    notibox.set_opacity(1.0);
     let noticlone = notibox.clone();
     let noticlone2 = notibox.clone();
     let basebox = Box::new(gtk::Orientation::Vertical, 5);
@@ -218,6 +221,8 @@ pub fn initialize_ui(css_string: String) {
             .application(app)
             .build();
         window.set_vexpand_set(true);
+        window.set_hexpand_set(false);
+        window.set_default_size(150, 120);
 
         gtk4_layer_shell::init_for_window(&window);
         gtk4_layer_shell::set_keyboard_mode(&window, gtk4_layer_shell::KeyboardMode::None);
@@ -243,7 +248,11 @@ pub fn initialize_ui(css_string: String) {
         }));
 
         let mainbox = Box::new(gtk::Orientation::Vertical, 5);
+        mainbox.set_css_classes(&[&"MainBox"]);
         let mainbox2 = mainbox.clone();
+        mainbox.set_hexpand_set(false);
+        mainbox.set_vexpand_set(true);
+        mainbox.set_size_request(150, 120);
 
         rx.attach(None, move |notification| {
             if id_map
