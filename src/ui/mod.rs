@@ -88,16 +88,19 @@ pub fn show_notification(
 
     let summary = Label::new(Some(&notification.summary));
     summary.set_css_classes(&[&"summary"]);
+    summary.set_ellipsize(gtk::pango::EllipsizeMode::End);
     let mut notisummary = noticlone2.imp().summary.borrow_mut();
     *notisummary = summary;
     let app_name = Label::new(Some(&notification.app_name));
     app_name.set_css_classes(&[&"appname"]);
+    app_name.set_ellipsize(gtk::pango::EllipsizeMode::End);
     // let timestamp = Label::new(Some(&notification.expire_timeout.to_string()));
     // timestamp.set_css_classes(&[&"timestamp"]);
     let (body, text_css) = class_from_html(notification.body);
     let text = Label::new(None);
     text.set_css_classes(&[&text_css, &"text"]);
     text.set_text(body.as_str());
+    text.set_ellipsize(gtk::pango::EllipsizeMode::End);
     let mut notitext = noticlone2.imp().body.borrow_mut();
     *notitext = text;
 
@@ -129,6 +132,7 @@ pub fn show_notification(
     }
 
     notibox.imp().notification_id.set(notification.replaces_id);
+    notibox.imp().reset.set(false);
     notibox.imp().removed.set(false);
     noticount.update(|x| x + 1);
 
@@ -144,10 +148,15 @@ pub fn show_notification(
         .write()
         .unwrap()
         .insert(notification.replaces_id, noticlone);
+    notibox.set_size_request(150, 120);
     mainbox.append(&*notibox);
     window.set_content(Some(mainbox));
     thread::spawn(move || {
         thread::sleep(Duration::from_secs(10));
+        while notibox.imp().reset.get() == true {
+            notibox.imp().reset.set(false);
+            thread::sleep(Duration::from_secs(10));
+        }
         tx2.send(notibox).unwrap();
     });
     window.show();
@@ -161,6 +170,7 @@ pub fn modify_notification(
     let map = id_map.write().unwrap();
     let mut notibox = map.get(&id);
     let notibox_borrow = notibox.borrow_mut().unwrap().imp();
+    notibox_borrow.reset.set(true);
     if let Some(progress) = notification.progress {
         if progress < 0 {
             return;
@@ -321,7 +331,7 @@ fn set_image(picture: Option<String>, icon: String, image: &Image) {
         if Path::new(&icon).is_file() {
             image.set_file(Some(&icon));
             image.set_css_classes(&[&"picture"]);
-            image.set_size_request(75, 75);
+            image.set_size_request(90, 90);
         } else {
             image.set_icon_name(Some(icon.as_str()));
             image.set_css_classes(&[&"image"]);
@@ -331,7 +341,7 @@ fn set_image(picture: Option<String>, icon: String, image: &Image) {
     if let Some(path_opt) = picture {
         if Path::new(&path_opt).is_file() {
             image.set_file(Some(path_opt.as_str()));
-            image.set_size_request(75, 75);
+            image.set_size_request(90, 90);
             image.set_css_classes(&[&"picture"]);
         } else {
             (use_icon)();
