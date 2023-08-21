@@ -154,8 +154,18 @@ impl Notification {
         print!(
             "Notification {} with summary {} from app {}\n
     Body: {}\n
-    timestamp: {}\n",
-            self.replaces_id, self.summary, self.app_name, self.body, self.expire_timeout,
+    timestamp: {}\n,
+    image-path: {}\n,
+    icon: {}\n",
+            self.replaces_id,
+            self.summary,
+            self.app_name,
+            self.body,
+            self.expire_timeout,
+            self.app_icon,
+            self.image_path
+                .clone()
+                .unwrap_or_else(|| "nopic".to_string())
         );
     }
 }
@@ -219,10 +229,10 @@ impl NotificationServer {
 
     pub fn run(&mut self) {
         let c = Connection::new_session().unwrap();
-        c.request_name("org.freedesktop.Notifications2", false, true, false)
+        c.request_name("org.freedesktop.Notifications", false, true, false)
             .unwrap();
         let mut cr = dbus_crossroads::Crossroads::new();
-        let token = cr.register("org.freedesktop.Notifications2", |c| {
+        let token = cr.register("org.freedesktop.Notifications", |c| {
             c.method(
                 "Notify",
                 (
@@ -383,7 +393,7 @@ impl NotificationServer {
             );
         });
         cr.insert(
-            "/org/freedesktop/Notifications2",
+            "/org/freedesktop/Notifications",
             &[token],
             self.wrapper.clone(),
         );

@@ -1,13 +1,16 @@
 use std::cell::{Cell, RefCell};
 
 use gtk::subclass::prelude::*;
-use gtk::{glib, ProgressBar};
+use gtk::{glib, Label, ProgressBar, Image, Picture};
 
 #[derive(Default)]
 pub struct NotificationButton {
     pub notification_id: Cell<u32>,
     pub removed: Cell<bool>,
-    pub fraction: RefCell<ProgressBar>, // pub notification_count: Cell<i32>,
+    pub fraction: RefCell<ProgressBar>,
+    pub body: RefCell<Label>,
+    pub summary: RefCell<Label>,
+    pub image: RefCell<Image>,
 }
 
 #[glib::object_subclass]

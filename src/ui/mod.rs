@@ -18,7 +18,7 @@ use gtk::{
     prelude::{ApplicationExt, ApplicationExtManual},
     subclass::prelude::ObjectSubclassIsExt,
     traits::{BoxExt, ButtonExt, GtkWindowExt, WidgetExt},
-    Application, Box, Image, Label, Picture, ProgressBar,
+    Application, Box, Image, Label, ProgressBar,
 };
 use gtk4_layer_shell::Edge;
 
@@ -56,12 +56,12 @@ pub fn remove_notification(
 
         let conn = Connection::new_session().unwrap();
         let proxy = conn.with_proxy(
-            "org.freedesktop.Notifications2",
-            "/org/freedesktop/Notifications2",
+            "org.freedesktop.Notifications",
+            "/org/freedesktop/Notifications",
             Duration::from_millis(1000),
         );
         let _: Result<(), dbus::Error> =
-            proxy.method_call("org.freedesktop.Notifications2", "CloseNotification", (id,));
+            proxy.method_call("org.freedesktop.Notifications", "CloseNotification", (id,));
     });
 }
 
@@ -75,6 +75,7 @@ pub fn show_notification(
 ) {
     let notibox = Arc::new(NotificationButton::new());
     let noticlone = notibox.clone();
+    let noticlone2 = notibox.clone();
     let basebox = Box::new(gtk::Orientation::Vertical, 5);
     let regularbox = Box::new(gtk::Orientation::Horizontal, 5);
     notibox.set_css_classes(&["NotificationBox", notification.urgency.to_str()]);
@@ -87,43 +88,34 @@ pub fn show_notification(
 
     let summary = Label::new(Some(&notification.summary));
     summary.set_css_classes(&[&"summary"]);
+    let mut notisummary = noticlone2.imp().summary.borrow_mut();
+    *notisummary = summary;
     let app_name = Label::new(Some(&notification.app_name));
     app_name.set_css_classes(&[&"appname"]);
-    let timestamp = Label::new(Some(&notification.expire_timeout.to_string()));
-    timestamp.set_css_classes(&[&"timestamp"]);
+    // let timestamp = Label::new(Some(&notification.expire_timeout.to_string()));
+    // timestamp.set_css_classes(&[&"timestamp"]);
     let (body, text_css) = class_from_html(notification.body);
-    let text = Label::new(Some(body.as_str()));
+    let text = Label::new(None);
     text.set_css_classes(&[&text_css, &"text"]);
+    text.set_text(body.as_str());
+    let mut notitext = noticlone2.imp().body.borrow_mut();
+    *notitext = text;
 
     appbox.append(&app_name);
-    appbox.append(&timestamp);
+    // appbox.append(&timestamp);
     bodybox.append(&appbox);
-    bodybox.append(&summary);
-    bodybox.append(&text);
+    bodybox.append(&*notisummary);
+    bodybox.append(&*notitext);
     regularbox.append(&bodybox);
     regularbox.append(&imagebox);
     basebox.append(&regularbox);
     notibox.set_child(Some(&basebox));
 
-    let use_icon = || {
-        let image = Image::from_icon_name(notification.app_icon.as_str());
-        image.set_css_classes(&[&"image"]);
-        imagebox.append(&image);
-    };
-
-    if let Some(path_opt) = notification.image_path {
-        if Path::new(&path_opt).is_file() {
-            let picture = Picture::new();
-            picture.set_css_classes(&[&"picture"]);
-            picture.set_filename(Some(path_opt));
-            picture.set_size_request(50, 50);
-            imagebox.append(&picture);
-        } else {
-            (use_icon)();
-        }
-    } else {
-        (use_icon)();
-    }
+    let image = Image::new();
+    set_image(notification.image_path, notification.app_icon, &image);
+    let mut notiimage = noticlone2.imp().image.borrow_mut();
+    *notiimage = image;
+    imagebox.append(&*notiimage);
 
     if let Some(progress) = notification.progress {
         if progress < 0 {
@@ -162,24 +154,36 @@ pub fn show_notification(
 }
 
 pub fn modify_notification(
-    progress_opt: Option<i32>,
-    id: u32,
+    notification: Notification,
     id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
 ) {
-    if let Some(progress) = progress_opt {
+    let id = notification.replaces_id;
+    let map = id_map.write().unwrap();
+    let mut notibox = map.get(&id);
+    let notibox_borrow = notibox.borrow_mut().unwrap().imp();
+    if let Some(progress) = notification.progress {
         if progress < 0 {
             return;
         }
-        let map = id_map.write().unwrap();
-        let mut notibox = map.get(&id);
-        notibox
-            .borrow_mut()
-            .unwrap()
-            .imp()
+        notibox_borrow
             .fraction
             .borrow_mut()
             .set_fraction(progress as f64 / 100.0);
     }
+    let (text, css_classes) = class_from_html(notification.summary);
+    let text_borrow = notibox_borrow.summary.borrow_mut();
+    text_borrow.set_text(text.as_str());
+    text_borrow.set_css_classes(&[&css_classes, &"summary"]);
+    let (text, css_classes) = class_from_html(notification.body);
+    let text_borrow = notibox_borrow.body.borrow_mut();
+    text_borrow.set_text(text.as_str());
+    text_borrow.set_css_classes(&[&css_classes, &"text"]);
+    let image_borrow = notibox_borrow.image.borrow_mut();
+    set_image(
+        notification.image_path,
+        notification.app_icon,
+        &image_borrow,
+    );
 }
 
 pub fn initialize_ui(css_string: String) {
@@ -247,11 +251,7 @@ pub fn initialize_ui(css_string: String) {
                     id_map.clone(),
                 );
             } else {
-                modify_notification(
-                    notification.progress,
-                    notification.replaces_id,
-                    id_map.clone(),
-                );
+                modify_notification(notification, id_map.clone());
             }
             glib::Continue(true)
         });
@@ -314,4 +314,29 @@ fn class_from_html(mut body: String) -> (String, String) {
     // let new_body = body.remove_matches("<img src=\">");
     // let new_body = body.remove_matches("<alt=\">");
     (body, String::from(ret))
+}
+
+fn set_image(picture: Option<String>, icon: String, image: &Image) {
+    let use_icon = || {
+        if Path::new(&icon).is_file() {
+            image.set_file(Some(&icon));
+            image.set_css_classes(&[&"picture"]);
+            image.set_size_request(75, 75);
+        } else {
+            image.set_icon_name(Some(icon.as_str()));
+            image.set_css_classes(&[&"image"]);
+        }
+    };
+
+    if let Some(path_opt) = picture {
+        if Path::new(&path_opt).is_file() {
+            image.set_file(Some(path_opt.as_str()));
+            image.set_size_request(75, 75);
+            image.set_css_classes(&[&"picture"]);
+        } else {
+            (use_icon)();
+        }
+    } else {
+        (use_icon)();
+    }
 }
