@@ -151,7 +151,7 @@ pub fn show_notification(
         .write()
         .unwrap()
         .insert(notification.replaces_id, noticlone);
-    notibox.set_size_request(150, 120);
+    notibox.set_size_request(300, 120);
     mainbox.append(&*notibox);
     window.set_content(Some(mainbox));
     thread::spawn(move || {
@@ -222,7 +222,7 @@ pub fn initialize_ui(css_string: String) {
             .build();
         window.set_vexpand_set(true);
         window.set_hexpand_set(false);
-        window.set_default_size(150, 120);
+        window.set_default_size(300, 120);
 
         gtk4_layer_shell::init_for_window(&window);
         gtk4_layer_shell::set_keyboard_mode(&window, gtk4_layer_shell::KeyboardMode::None);
@@ -252,7 +252,7 @@ pub fn initialize_ui(css_string: String) {
         let mainbox2 = mainbox.clone();
         mainbox.set_hexpand_set(false);
         mainbox.set_vexpand_set(true);
-        mainbox.set_size_request(150, 120);
+        mainbox.set_size_request(300, 120);
 
         rx.attach(None, move |notification| {
             if id_map
@@ -340,7 +340,7 @@ fn set_image(picture: Option<String>, icon: String, image: &Image) {
         if Path::new(&icon).is_file() {
             image.set_file(Some(&icon));
             image.set_css_classes(&[&"picture"]);
-            image.set_size_request(90, 90);
+            image.set_size_request(100, 100);
         } else {
             image.set_icon_name(Some(icon.as_str()));
             image.set_css_classes(&[&"image"]);
@@ -350,7 +350,7 @@ fn set_image(picture: Option<String>, icon: String, image: &Image) {
     if let Some(path_opt) = picture {
         if Path::new(&path_opt).is_file() {
             image.set_file(Some(path_opt.as_str()));
-            image.set_size_request(90, 90);
+            image.set_size_request(100, 100);
             image.set_css_classes(&[&"picture"]);
         } else {
             (use_icon)();
