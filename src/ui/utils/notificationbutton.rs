@@ -1,4 +1,5 @@
 use std::cell::{Cell, RefCell};
+use std::sync::Mutex;
 
 use gtk::subclass::prelude::*;
 use gtk::{glib, Image, Label, ProgressBar};
@@ -6,7 +7,7 @@ use gtk::{glib, Image, Label, ProgressBar};
 #[derive(Default)]
 pub struct NotificationButton {
     pub notification_id: Cell<u32>,
-    pub removed: Cell<bool>,
+    pub removed: Mutex<bool>,
     pub fraction: RefCell<ProgressBar>,
     pub body: RefCell<Label>,
     pub summary: RefCell<Label>,

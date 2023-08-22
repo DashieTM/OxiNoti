@@ -5,7 +5,6 @@ use std::{
     cell::Cell,
     collections::HashMap,
     path::Path,
-    rc::Rc,
     sync::{Arc, RwLock},
     thread,
     time::Duration,
@@ -31,25 +30,30 @@ const APP_ID: &str = "org.dashie.oxinoti";
 pub fn remove_notification(
     mainbox: &Box,
     window: &Window,
-    noticount: Rc<Cell<i32>>,
+    noticount: Arc<Cell<i32>>,
     notibox: &NotificationButton,
     id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
     timed_out: bool,
 ) {
-    if notibox.imp().removed.get() {
+    let removed_opt = notibox.imp().removed.lock();
+    if removed_opt.is_err() {
         return;
     }
-    notibox.imp().removed.set(true);
+    let _guard = removed_opt.unwrap();
+    notibox.unmap();
+
+    let id = notibox.imp().notification_id.get();
+    id_map.write().unwrap().remove(&id);
+
+    mainbox.remove(&*notibox);
+    window.queue_resize();
+
     noticount.update(|x| x - 1);
     let count = noticount.get();
     if count == 0 {
         window.set_visible(false);
     }
-    let id = notibox.imp().notification_id.get();
-    id_map.write().unwrap().remove(&id);
-    // notibox.unmap();
-    mainbox.remove(&*notibox);
-    window.queue_resize();
+
     if timed_out {
         return;
     }
@@ -68,7 +72,7 @@ pub fn remove_notification(
 }
 
 pub fn show_notification(
-    noticount: Rc<Cell<i32>>,
+    noticount: Arc<Cell<i32>>,
     mainbox: &Box,
     window: &Window,
     notification: Notification,
@@ -76,10 +80,20 @@ pub fn show_notification(
     id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
 ) {
     let notibox = Arc::new(NotificationButton::new());
+    notibox.imp().notification_id.set(notification.replaces_id);
+    notibox.imp().reset.set(false);
     notibox.set_opacity(1.0);
     notibox.set_size_request(300, 120);
     let noticlone = notibox.clone();
     let noticlone2 = notibox.clone();
+    let noticlone3 = notibox.clone();
+    let noticlone4 = notibox.clone();
+    let removed_opt = noticlone4.imp().removed.lock();
+    if removed_opt.is_err() {
+        return;
+    }
+    let guard = removed_opt.unwrap();
+
     let basebox = Box::new(gtk::Orientation::Vertical, 5);
     let regularbox = Box::new(gtk::Orientation::Horizontal, 5);
     notibox.set_css_classes(&["NotificationBox", notification.urgency.to_str()]);
@@ -124,20 +138,18 @@ pub fn show_notification(
     *notiimage = image;
     imagebox.append(&*notiimage);
 
+    let progbar = ProgressBar::new();
+    let mut shared_progbar = noticlone3.imp().fraction.borrow_mut();
+    *shared_progbar = progbar;
+
     if let Some(progress) = notification.progress {
         if progress < 0 {
             return;
         }
-        let progbar = ProgressBar::new();
-        progbar.set_fraction(progress as f64 / 100.0);
-        let mut shared_progbar = notibox.imp().fraction.borrow_mut();
-        *shared_progbar = progbar;
+        shared_progbar.set_fraction(progress as f64 / 100.0);
         basebox.append(&*shared_progbar);
     }
 
-    notibox.imp().notification_id.set(notification.replaces_id);
-    notibox.imp().reset.set(false);
-    notibox.imp().removed.set(false);
     noticount.update(|x| x + 1);
 
     let id_map_clone = id_map.clone();
@@ -154,15 +166,17 @@ pub fn show_notification(
         .insert(notification.replaces_id, noticlone);
     notibox.set_size_request(300, 120);
     mainbox.append(&*notibox);
-    window.set_content(Some(mainbox));
     thread::spawn(move || {
-        thread::sleep(Duration::from_secs(10));
+        thread::sleep(Duration::from_secs(3));
         while notibox.imp().reset.get() == true {
             notibox.imp().reset.set(false);
-            thread::sleep(Duration::from_secs(10));
+            thread::sleep(Duration::from_secs(3));
         }
         tx2.send(notibox).unwrap();
     });
+    drop(guard);
+    drop(noticlone4);
+    drop(noticount);
     window.show();
 }
 
@@ -173,7 +187,16 @@ pub fn modify_notification(
     let id = notification.replaces_id;
     let map = id_map.write().unwrap();
     let mut notibox = map.get(&id);
-    let notibox_borrow = notibox.borrow_mut().unwrap().imp();
+    let notibox_borrow_opt = notibox.borrow_mut();
+    if notibox_borrow_opt.is_none() {
+        return;
+    }
+    let notibox_borrow = notibox_borrow_opt.unwrap().imp();
+    let removed_opt = notibox_borrow.removed.lock();
+    if removed_opt.is_err() {
+        return;
+    }
+    let _guard = removed_opt.unwrap();
     notibox_borrow.reset.set(true);
     if let Some(progress) = notification.progress {
         if progress < 0 {
@@ -236,7 +259,7 @@ pub fn initialize_ui(css_string: String) {
         let windowrc2 = windowrc.clone();
 
         // used in order to not close the window if we still have notifications
-        let noticount = Rc::new(Cell::new(0));
+        let noticount = Arc::new(Cell::new(0));
         let noticount2 = noticount.clone();
 
         let id_map = Arc::new(RwLock::new(HashMap::<u32, Arc<NotificationButton>>::new()));
@@ -250,6 +273,7 @@ pub fn initialize_ui(css_string: String) {
 
         let mainbox = Box::new(gtk::Orientation::Vertical, 5);
         mainbox.set_css_classes(&[&"MainBox"]);
+        window.set_content(Some(&mainbox));
         let mainbox2 = mainbox.clone();
         mainbox.set_hexpand_set(false);
         mainbox.set_vexpand_set(true);
@@ -284,6 +308,7 @@ pub fn initialize_ui(css_string: String) {
                 id_map_clone.clone(),
                 true,
             );
+            drop(notibox);
             glib::Continue(true)
         });
     });
