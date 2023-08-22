@@ -77,6 +77,7 @@ pub fn show_notification(
 ) {
     let notibox = Arc::new(NotificationButton::new());
     notibox.set_opacity(1.0);
+    notibox.set_size_request(300, 120);
     let noticlone = notibox.clone();
     let noticlone2 = notibox.clone();
     let basebox = Box::new(gtk::Orientation::Vertical, 5);
