@@ -1,5 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 
 use gtk::subclass::prelude::*;
 use gtk::{glib, Image, Label, ProgressBar};
@@ -12,7 +13,7 @@ pub struct NotificationButton {
     pub body: RefCell<Label>,
     pub summary: RefCell<Label>,
     pub image: RefCell<Image>,
-    pub reset: Cell<bool>,
+    pub reset: AtomicBool,
 }
 
 #[glib::object_subclass]

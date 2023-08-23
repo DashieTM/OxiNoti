@@ -31,23 +31,33 @@ pub fn remove_notification(
     mainbox: &Box,
     window: &Window,
     noticount: Arc<Cell<i32>>,
-    notibox: &NotificationButton,
+    id: u32,
     id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
     timed_out: bool,
     mutex: Arc<Mutex<bool>>,
 ) {
     let _guard = mutex.lock().unwrap();
-    let id = notibox.imp().notification_id.get();
-    id_map.write().unwrap().remove(&id);
+    let notiopt = id_map.write().unwrap().remove(&id);
+    if notiopt.is_none() {
+        println!("notification removed already");
+        return;
+    }
+    let notibox = notiopt.unwrap();
 
     notibox.unmap();
+
     mainbox.remove(&*notibox);
     window.queue_resize();
+    println!("count before remove: {}", Arc::strong_count(&notibox));
+    drop(notibox);
 
     noticount.update(|x| x - 1);
     let count = noticount.get();
     if count == 0 {
-        window.set_visible(false);
+        // window.set_visible(false);
+        println!("Before Hide");
+        window.hide();
+        println!("After Hide");
     }
 
     if timed_out {
@@ -77,22 +87,18 @@ pub fn show_notification(
     mutex: Arc<Mutex<bool>>,
 ) {
     let mutexclone = mutex.clone();
-    let mutexclone2 = mutex.clone();
-    let guard = mutex.lock().unwrap();
+    let _guard = mutex.lock().unwrap();
     let notibox = Arc::new(NotificationButton::new());
     notibox.imp().notification_id.set(notification.replaces_id);
-    notibox.imp().reset.set(false);
+    notibox
+        .imp()
+        .reset
+        .store(true, std::sync::atomic::Ordering::SeqCst);
     notibox.set_opacity(1.0);
     notibox.set_size_request(300, 120);
     let noticlone = notibox.clone();
     let noticlone2 = notibox.clone();
     let noticlone3 = notibox.clone();
-    let noticlone4 = notibox.clone();
-    // let removed_opt = noticlone4.imp().removed.lock();
-    // if removed_opt.is_err() {
-    //     return;
-    // }
-    // let guard = removed_opt.unwrap();
 
     let basebox = Box::new(gtk::Orientation::Vertical, 5);
     let regularbox = Box::new(gtk::Orientation::Horizontal, 5);
@@ -112,8 +118,6 @@ pub fn show_notification(
     let app_name = Label::new(Some(&notification.app_name));
     app_name.set_css_classes(&[&"appname"]);
     app_name.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    // let timestamp = Label::new(Some(&notification.expire_timeout.to_string()));
-    // timestamp.set_css_classes(&[&"timestamp"]);
     let (body, text_css) = class_from_html(notification.body);
     let text = Label::new(None);
     text.set_css_classes(&[&text_css, &"text"]);
@@ -153,10 +157,10 @@ pub fn show_notification(
     noticount.update(|x| x + 1);
 
     let id_map_clone = id_map.clone();
-
+    let id = notibox.imp().notification_id.get();
     notibox.connect_clicked(
-        clone!(@weak noticount, @weak mainbox, @weak window => move |notibox| {
-            remove_notification(&mainbox, &window, noticount, notibox, id_map.clone(), false, mutexclone.clone());
+        clone!(@weak noticount, @weak mainbox, @weak window => move |_| {
+            remove_notification(&mainbox, &window, noticount, id, id_map.clone(), false, mutexclone.clone());
         }),
     );
 
@@ -164,21 +168,21 @@ pub fn show_notification(
         .write()
         .unwrap()
         .insert(notification.replaces_id, noticlone);
-    notibox.set_size_request(300, 120);
     mainbox.append(&*notibox);
-    thread::spawn(move || {
+    thread::spawn(clone!(@weak notibox => move || {
         thread::sleep(Duration::from_secs(3));
-        let _guard = mutexclone2.lock();
-        while notibox.imp().reset.get() == true {
-            notibox.imp().reset.set(false);
+        while notibox.imp().reset.load(std::sync::atomic::Ordering::SeqCst) == true {
+            notibox.imp().reset.store(false, std::sync::atomic::Ordering::SeqCst);
             thread::sleep(Duration::from_secs(3));
         }
         tx2.send(notibox).unwrap();
-    });
-    drop(guard);
-    drop(noticlone4);
-    drop(noticount);
-    window.show();
+    }));
+    if window.is_visible() {
+        return;
+    }
+    println!("before show");
+    window.present();
+    println!("after show");
 }
 
 pub fn modify_notification(
@@ -200,7 +204,9 @@ pub fn modify_notification(
     //     return;
     // }
     // let _guard = removed_opt.unwrap();
-    notibox_borrow.reset.set(true);
+    notibox_borrow
+        .reset
+        .store(true, std::sync::atomic::Ordering::SeqCst);
     if let Some(progress) = notification.progress {
         if progress < 0 {
             return;
@@ -306,16 +312,18 @@ pub fn initialize_ui(css_string: String) {
             glib::Continue(true)
         });
         rx2.attach(None, move |notibox| {
+            let id = notibox.imp().notification_id.get();
+            println!("count on auto:{}", Arc::strong_count(&notibox));
+            drop(notibox);
             remove_notification(
                 &mainbox2,
                 &windowrc2,
                 noticount2.clone(),
-                &*notibox,
+                id,
                 id_map_clone.clone(),
                 true,
                 lock.clone(),
             );
-            drop(notibox);
             glib::Continue(true)
         });
     });
