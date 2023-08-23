@@ -150,6 +150,7 @@ impl Notification {
         }
     }
 
+    #[allow(dead_code)]
     pub fn print(&self) {
         print!(
             "Notification {} with summary {} from app {}\n
@@ -277,7 +278,6 @@ impl NotificationServer {
                         hints,
                         expire_timeout,
                     );
-                    notification.print();
                     let mut server = serverref.lock().unwrap();
                     server.add_notification(&mut notification);
                     if !server.do_not_disturb && !server.notification_center {

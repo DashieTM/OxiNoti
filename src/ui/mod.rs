@@ -18,8 +18,8 @@ use gtk::{
     prelude::{ApplicationExt, ApplicationExtManual},
     subclass::prelude::ObjectSubclassIsExt,
     traits::{
-        BoxExt, ButtonExt, ContainerExt, CssProviderExt, GtkWindowExt, ImageExt, LabelExt,
-        ProgressBarExt, WidgetExt,
+        ButtonExt, ContainerExt, CssProviderExt, GtkWindowExt, ImageExt, LabelExt, ProgressBarExt,
+        StyleContextExt, WidgetExt,
     },
     Application, Box, Image, Label, ProgressBar, StyleContext, Window,
 };
@@ -43,7 +43,6 @@ pub fn remove_notification(
     let _guard = mutex.lock().unwrap();
     let notiopt = id_map.write().unwrap().remove(&id);
     if notiopt.is_none() {
-        println!("notification removed already");
         return;
     }
     let notibox = notiopt.unwrap();
@@ -52,16 +51,12 @@ pub fn remove_notification(
 
     mainbox.remove(&*notibox);
     window.queue_resize();
-    println!("count before remove: {}", Arc::strong_count(&notibox));
     drop(notibox);
 
     noticount.update(|x| x - 1);
     let count = noticount.get();
     if count == 0 {
-        // window.set_visible(false);
-        println!("Before Hide");
         window.hide();
-        println!("After Hide");
     }
 
     if timed_out {
@@ -93,6 +88,7 @@ pub fn show_notification(
     let mutexclone = mutex.clone();
     let _guard = mutex.lock().unwrap();
     let notibox = Arc::new(NotificationButton::new());
+    notibox.style_context().add_class("NotificationBox");
     notibox.imp().notification_id.set(notification.replaces_id);
     notibox
         .imp()
@@ -106,34 +102,34 @@ pub fn show_notification(
 
     let basebox = Box::new(gtk::Orientation::Vertical, 5);
     let regularbox = Box::new(gtk::Orientation::Horizontal, 5);
-    // notibox.set_css_name();
-    // notibox.set_css_classes(&["NotificationBox", notification.urgency.to_str()]);
+    notibox.style_context().add_class("NotificationBox");
+    notibox
+        .style_context()
+        .add_class(notification.urgency.to_str());
     let bodybox = Box::new(gtk::Orientation::Vertical, 5);
-    // bodybox.set_css_name();
-    // bodybox.set_css_classes(&[&"bodybox"]);
+    bodybox.style_context().add_class("bodybox");
     let imagebox = Box::new(gtk::Orientation::Horizontal, 5);
-    // imagebox.set_css_classes(&[&"imagebox"]);
+    imagebox.style_context().add_class("imagebox");
     let appbox = Box::new(gtk::Orientation::Horizontal, 2);
-    // appbox.set_css_classes(&[&"miscbox"]);
-
+    appbox.style_context().add_class("miscbox");
     let summary = Label::new(Some(&notification.summary));
-    // summary.set_css_classes(&[&"summary"]);
+    summary.style_context().add_class("summary");
     summary.set_ellipsize(gtk::pango::EllipsizeMode::End);
     let mut notisummary = noticlone2.imp().summary.borrow_mut();
     *notisummary = summary;
     let app_name = Label::new(Some(&notification.app_name));
-    // app_name.set_css_classes(&[&"appname"]);
+    app_name.style_context().add_class("appname");
     app_name.set_ellipsize(gtk::pango::EllipsizeMode::End);
     let (body, text_css) = class_from_html(notification.body);
     let text = Label::new(None);
-    // text.set_css_classes(&[&text_css, &"text"]);
+    text.style_context().add_class("text");
+    text.style_context().add_class(&text_css);
     text.set_text(body.as_str());
     text.set_ellipsize(gtk::pango::EllipsizeMode::End);
     let mut notitext = noticlone2.imp().body.borrow_mut();
     *notitext = text;
 
     appbox.add(&app_name);
-    // appbox.add(&timestamp);
     bodybox.add(&appbox);
     bodybox.add(&*notisummary);
     bodybox.add(&*notitext);
@@ -183,9 +179,7 @@ pub fn show_notification(
         }
         tx2.send(notibox).unwrap();
     }));
-    println!("before show");
     window.show_all();
-    println!("after show");
 }
 
 pub fn modify_notification(
@@ -202,11 +196,6 @@ pub fn modify_notification(
         return;
     }
     let notibox_borrow = notibox_borrow_opt.unwrap().imp();
-    // let removed_opt = notibox_borrow.removed.lock();
-    // if removed_opt.is_err() {
-    //     return;
-    // }
-    // let _guard = removed_opt.unwrap();
     notibox_borrow
         .reset
         .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -222,11 +211,13 @@ pub fn modify_notification(
     let (text, css_classes) = class_from_html(notification.summary);
     let text_borrow = notibox_borrow.summary.borrow_mut();
     text_borrow.set_text(text.as_str());
-    // text_borrow.set_css_classes(&[&css_classes, &"summary"]);
+    text_borrow.style_context().add_class("summary");
+    text_borrow.style_context().add_class(&css_classes);
     let (text, css_classes) = class_from_html(notification.body);
     let text_borrow = notibox_borrow.body.borrow_mut();
     text_borrow.set_text(text.as_str());
-    // text_borrow.set_css_classes(&[&css_classes, &"text"]);
+    text_borrow.style_context().add_class("text");
+    text_borrow.style_context().add_class(&css_classes);
     let image_borrow = notibox_borrow.image.borrow_mut();
     set_image(
         notification.image_path,
@@ -255,6 +246,7 @@ pub fn initialize_ui(css_string: String) {
         let lock = Arc::new(Mutex::new(false));
         let lock2 = lock.clone();
         let mainbox = Box::new(gtk::Orientation::Vertical, 5);
+        mainbox.style_context().add_class("MainBox");
         let window = Window::builder()
             .name("MainWindow")
             .application(app)
@@ -315,7 +307,6 @@ pub fn initialize_ui(css_string: String) {
         });
         rx2.attach(None, move |notibox| {
             let id = notibox.imp().notification_id.get();
-            println!("count on auto:{}", Arc::strong_count(&notibox));
             drop(notibox);
             remove_notification(
                 &mainbox2,
@@ -333,7 +324,9 @@ pub fn initialize_ui(css_string: String) {
     fn load_css(css_string: &String) {
         let context_provider = gtk::CssProvider::new();
         if css_string != "" {
-            context_provider.load_from_path(css_string);
+            if context_provider.load_from_path(css_string).is_err() {
+                println!("Loading css failed! Please provide a path to a css file.");
+            }
         }
 
         StyleContext::add_provider_for_screen(
@@ -373,8 +366,6 @@ fn class_from_html(mut body: String) -> (String, String) {
     body.remove_matches("</a>");
     body.remove_matches("<u>");
     body.remove_matches("</u>");
-    // let new_body = body.remove_matches("<img src=\">");
-    // let new_body = body.remove_matches("<alt=\">");
     (body, String::from(ret))
 }
 
@@ -385,17 +376,15 @@ fn set_image(picture: Option<String>, icon: String, image: &Image) {
             .unwrap()
             .scale_simple(100, 100, gdk_pixbuf::InterpType::Bilinear)
     };
-    let use_icon = || {
+    let use_icon = |mut _pixbuf: Option<Pixbuf>| {
         if Path::new(&icon).is_file() {
-            pixbuf = Some(Pixbuf::from_file(&icon).unwrap());
-            pixbuf = resize_pixbuf(pixbuf);
-            image.set_pixbuf(Some(&pixbuf.unwrap()));
-            // image.set_file(Some(&icon));
-            // image.set_css_classes(&[&"picture"]);
-            // image.set_size_request(10, 10);
+            _pixbuf = Some(Pixbuf::from_file(&icon).unwrap());
+            _pixbuf = resize_pixbuf(_pixbuf);
+            image.set_pixbuf(Some(&_pixbuf.unwrap()));
+            image.style_context().add_class("picture");
         } else {
             image.set_icon_name(Some(icon.as_str()));
-            // image.set_css_classes(&[&"image"]);
+            image.style_context().add_class("image");
         }
     };
 
@@ -404,13 +393,11 @@ fn set_image(picture: Option<String>, icon: String, image: &Image) {
             pixbuf = Some(Pixbuf::from_file(path_opt).unwrap());
             pixbuf = resize_pixbuf(pixbuf);
             image.set_pixbuf(Some(&pixbuf.unwrap()));
-            // image.set_file(Some(path_opt.as_str()));
-            // image.set_size_request(10, 10);
-            // image.set_css_classes(&[&"picture"]);
+            image.style_context().add_class("picture");
         } else {
-            (use_icon)();
+            (use_icon)(pixbuf);
         }
     } else {
-        (use_icon)();
+        (use_icon)(pixbuf);
     }
 }
