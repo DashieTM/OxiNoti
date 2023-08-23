@@ -27,8 +27,11 @@ impl ObjectImpl for NotificationButton {}
 
 impl WidgetImpl for NotificationButton {}
 
+impl ContainerImpl for NotificationButton {}
+
 impl BoxImpl for NotificationButton {}
+
+impl BinImpl for NotificationButton {}
 
 impl ButtonImpl for NotificationButton {}
 
-impl NativeImpl for NotificationButton {}

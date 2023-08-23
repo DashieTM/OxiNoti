@@ -10,16 +10,20 @@ use std::{
     time::Duration,
 };
 
-use adw::{traits::AdwWindowExt, Window};
+use gdk_pixbuf::Pixbuf;
 use gtk::{
+    gdk,
     gio::SimpleAction,
     glib::{self, clone, Sender},
     prelude::{ApplicationExt, ApplicationExtManual},
     subclass::prelude::ObjectSubclassIsExt,
-    traits::{BoxExt, ButtonExt, GtkWindowExt, WidgetExt},
-    Application, Box, Image, Label, ProgressBar,
+    traits::{
+        BoxExt, ButtonExt, ContainerExt, CssProviderExt, GtkWindowExt, ImageExt, LabelExt,
+        ProgressBarExt, WidgetExt,
+    },
+    Application, Box, Image, Label, ProgressBar, StyleContext, Window,
 };
-use gtk4_layer_shell::Edge;
+use gtk_layer_shell::Edge;
 
 use crate::daemon::{Notification, NotificationServer};
 
@@ -102,45 +106,47 @@ pub fn show_notification(
 
     let basebox = Box::new(gtk::Orientation::Vertical, 5);
     let regularbox = Box::new(gtk::Orientation::Horizontal, 5);
-    notibox.set_css_classes(&["NotificationBox", notification.urgency.to_str()]);
+    // notibox.set_css_name();
+    // notibox.set_css_classes(&["NotificationBox", notification.urgency.to_str()]);
     let bodybox = Box::new(gtk::Orientation::Vertical, 5);
-    bodybox.set_css_classes(&[&"bodybox"]);
+    // bodybox.set_css_name();
+    // bodybox.set_css_classes(&[&"bodybox"]);
     let imagebox = Box::new(gtk::Orientation::Horizontal, 5);
-    imagebox.set_css_classes(&[&"imagebox"]);
+    // imagebox.set_css_classes(&[&"imagebox"]);
     let appbox = Box::new(gtk::Orientation::Horizontal, 2);
-    appbox.set_css_classes(&[&"miscbox"]);
+    // appbox.set_css_classes(&[&"miscbox"]);
 
     let summary = Label::new(Some(&notification.summary));
-    summary.set_css_classes(&[&"summary"]);
+    // summary.set_css_classes(&[&"summary"]);
     summary.set_ellipsize(gtk::pango::EllipsizeMode::End);
     let mut notisummary = noticlone2.imp().summary.borrow_mut();
     *notisummary = summary;
     let app_name = Label::new(Some(&notification.app_name));
-    app_name.set_css_classes(&[&"appname"]);
+    // app_name.set_css_classes(&[&"appname"]);
     app_name.set_ellipsize(gtk::pango::EllipsizeMode::End);
     let (body, text_css) = class_from_html(notification.body);
     let text = Label::new(None);
-    text.set_css_classes(&[&text_css, &"text"]);
+    // text.set_css_classes(&[&text_css, &"text"]);
     text.set_text(body.as_str());
     text.set_ellipsize(gtk::pango::EllipsizeMode::End);
     let mut notitext = noticlone2.imp().body.borrow_mut();
     *notitext = text;
 
-    appbox.append(&app_name);
-    // appbox.append(&timestamp);
-    bodybox.append(&appbox);
-    bodybox.append(&*notisummary);
-    bodybox.append(&*notitext);
-    regularbox.append(&bodybox);
-    regularbox.append(&imagebox);
-    basebox.append(&regularbox);
+    appbox.add(&app_name);
+    // appbox.add(&timestamp);
+    bodybox.add(&appbox);
+    bodybox.add(&*notisummary);
+    bodybox.add(&*notitext);
+    regularbox.add(&bodybox);
+    regularbox.add(&imagebox);
+    basebox.add(&regularbox);
     notibox.set_child(Some(&basebox));
 
     let image = Image::new();
     set_image(notification.image_path, notification.app_icon, &image);
     let mut notiimage = noticlone2.imp().image.borrow_mut();
     *notiimage = image;
-    imagebox.append(&*notiimage);
+    imagebox.add(&*notiimage);
 
     let progbar = ProgressBar::new();
     let mut shared_progbar = noticlone3.imp().fraction.borrow_mut();
@@ -151,7 +157,7 @@ pub fn show_notification(
             return;
         }
         shared_progbar.set_fraction(progress as f64 / 100.0);
-        basebox.append(&*shared_progbar);
+        basebox.add(&*shared_progbar);
     }
 
     noticount.update(|x| x + 1);
@@ -168,7 +174,7 @@ pub fn show_notification(
         .write()
         .unwrap()
         .insert(notification.replaces_id, noticlone);
-    mainbox.append(&*notibox);
+    mainbox.add(&*notibox);
     thread::spawn(clone!(@weak notibox => move || {
         thread::sleep(Duration::from_secs(3));
         while notibox.imp().reset.load(std::sync::atomic::Ordering::SeqCst) == true {
@@ -177,11 +183,8 @@ pub fn show_notification(
         }
         tx2.send(notibox).unwrap();
     }));
-    if window.is_visible() {
-        return;
-    }
     println!("before show");
-    window.present();
+    window.show_all();
     println!("after show");
 }
 
@@ -219,11 +222,11 @@ pub fn modify_notification(
     let (text, css_classes) = class_from_html(notification.summary);
     let text_borrow = notibox_borrow.summary.borrow_mut();
     text_borrow.set_text(text.as_str());
-    text_borrow.set_css_classes(&[&css_classes, &"summary"]);
+    // text_borrow.set_css_classes(&[&css_classes, &"summary"]);
     let (text, css_classes) = class_from_html(notification.body);
     let text_borrow = notibox_borrow.body.borrow_mut();
     text_borrow.set_text(text.as_str());
-    text_borrow.set_css_classes(&[&css_classes, &"text"]);
+    // text_borrow.set_css_classes(&[&css_classes, &"text"]);
     let image_borrow = notibox_borrow.image.borrow_mut();
     set_image(
         notification.image_path,
@@ -235,8 +238,8 @@ pub fn modify_notification(
 pub fn initialize_ui(css_string: String) {
     let app = Application::builder().application_id(APP_ID).build();
     app.connect_startup(move |_| {
-        if !adw::is_initialized() {
-            adw::init().unwrap();
+        if !gtk::is_initialized() {
+            gtk::init().unwrap();
         }
         load_css(&css_string);
     });
@@ -251,20 +254,22 @@ pub fn initialize_ui(css_string: String) {
         });
         let lock = Arc::new(Mutex::new(false));
         let lock2 = lock.clone();
+        let mainbox = Box::new(gtk::Orientation::Vertical, 5);
         let window = Window::builder()
             .name("MainWindow")
             .application(app)
+            .child(&mainbox)
             .build();
         window.set_vexpand_set(true);
         window.set_hexpand_set(false);
         window.set_default_size(300, 120);
 
-        gtk4_layer_shell::init_for_window(&window);
-        gtk4_layer_shell::set_keyboard_mode(&window, gtk4_layer_shell::KeyboardMode::None);
-        gtk4_layer_shell::auto_exclusive_zone_enable(&window);
-        gtk4_layer_shell::set_layer(&window, gtk4_layer_shell::Layer::Overlay);
-        gtk4_layer_shell::set_anchor(&window, Edge::Right, true);
-        gtk4_layer_shell::set_anchor(&window, Edge::Top, true);
+        gtk_layer_shell::init_for_window(&window);
+        // gtk_layer_shell::set_keyboard_mode(&window, gtk4_layer_shell::KeyboardMode::None);
+        gtk_layer_shell::auto_exclusive_zone_enable(&window);
+        gtk_layer_shell::set_layer(&window, gtk_layer_shell::Layer::Overlay);
+        gtk_layer_shell::set_anchor(&window, Edge::Right, true);
+        gtk_layer_shell::set_anchor(&window, Edge::Top, true);
 
         let windowrc = window.clone();
         let windowrc2 = windowrc.clone();
@@ -282,9 +287,6 @@ pub fn initialize_ui(css_string: String) {
             window.present();
         }));
 
-        let mainbox = Box::new(gtk::Orientation::Vertical, 5);
-        mainbox.set_css_classes(&[&"MainBox"]);
-        window.set_content(Some(&mainbox));
         let mainbox2 = mainbox.clone();
         mainbox.set_hexpand_set(false);
         mainbox.set_vexpand_set(true);
@@ -334,8 +336,8 @@ pub fn initialize_ui(css_string: String) {
             context_provider.load_from_path(css_string);
         }
 
-        gtk::style_context_add_provider_for_display(
-            &gtk::gdk::Display::default().unwrap(),
+        StyleContext::add_provider_for_screen(
+            &gdk::Screen::default().unwrap(),
             &context_provider,
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
@@ -377,22 +379,34 @@ fn class_from_html(mut body: String) -> (String, String) {
 }
 
 fn set_image(picture: Option<String>, icon: String, image: &Image) {
+    let mut pixbuf: Option<Pixbuf> = None;
+    let resize_pixbuf = |pixbuf: Option<Pixbuf>| {
+        pixbuf
+            .unwrap()
+            .scale_simple(100, 100, gdk_pixbuf::InterpType::Bilinear)
+    };
     let use_icon = || {
         if Path::new(&icon).is_file() {
-            image.set_file(Some(&icon));
-            image.set_css_classes(&[&"picture"]);
-            image.set_size_request(100, 100);
+            pixbuf = Some(Pixbuf::from_file(&icon).unwrap());
+            pixbuf = resize_pixbuf(pixbuf);
+            image.set_pixbuf(Some(&pixbuf.unwrap()));
+            // image.set_file(Some(&icon));
+            // image.set_css_classes(&[&"picture"]);
+            // image.set_size_request(10, 10);
         } else {
             image.set_icon_name(Some(icon.as_str()));
-            image.set_css_classes(&[&"image"]);
+            // image.set_css_classes(&[&"image"]);
         }
     };
 
     if let Some(path_opt) = picture {
         if Path::new(&path_opt).is_file() {
-            image.set_file(Some(path_opt.as_str()));
-            image.set_size_request(100, 100);
-            image.set_css_classes(&[&"picture"]);
+            pixbuf = Some(Pixbuf::from_file(path_opt).unwrap());
+            pixbuf = resize_pixbuf(pixbuf);
+            image.set_pixbuf(Some(&pixbuf.unwrap()));
+            // image.set_file(Some(path_opt.as_str()));
+            // image.set_size_request(10, 10);
+            // image.set_css_classes(&[&"picture"]);
         } else {
             (use_icon)();
         }
