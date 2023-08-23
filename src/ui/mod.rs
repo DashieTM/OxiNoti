@@ -19,9 +19,9 @@ use gtk::{
     subclass::prelude::ObjectSubclassIsExt,
     traits::{
         ButtonExt, ContainerExt, CssProviderExt, GtkWindowExt, ImageExt, LabelExt, ProgressBarExt,
-        StyleContextExt, WidgetExt,
+        StyleContextExt, WidgetExt, BoxExt,
     },
-    Application, Box, Image, Label, ProgressBar, StyleContext, Window,
+    Application, Box, Image, Label, ProgressBar, StyleContext, Window, PackType, pango, Align, WindowType,
 };
 use gtk_layer_shell::Edge;
 
@@ -102,6 +102,7 @@ pub fn show_notification(
 
     let basebox = Box::new(gtk::Orientation::Vertical, 5);
     let regularbox = Box::new(gtk::Orientation::Horizontal, 5);
+    regularbox.set_homogeneous(true);
     notibox.style_context().add_class("NotificationBox");
     notibox
         .style_context()
@@ -110,31 +111,37 @@ pub fn show_notification(
     bodybox.style_context().add_class("bodybox");
     let imagebox = Box::new(gtk::Orientation::Horizontal, 5);
     imagebox.style_context().add_class("imagebox");
-    let appbox = Box::new(gtk::Orientation::Horizontal, 2);
-    appbox.style_context().add_class("miscbox");
     let summary = Label::new(Some(&notification.summary));
     summary.style_context().add_class("summary");
-    summary.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    summary.set_wrap_mode(pango::WrapMode::Word); 
+    summary.set_line_wrap(true);
+    summary.set_valign(Align::Center);
     let mut notisummary = noticlone2.imp().summary.borrow_mut();
     *notisummary = summary;
     let app_name = Label::new(Some(&notification.app_name));
     app_name.style_context().add_class("appname");
-    app_name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    app_name.set_ellipsize(pango::EllipsizeMode::End);
     let (body, text_css) = class_from_html(notification.body);
     let text = Label::new(None);
     text.style_context().add_class("text");
     text.style_context().add_class(&text_css);
     text.set_text(body.as_str());
-    text.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    // text.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    text.set_wrap_mode(pango::WrapMode::Word); 
+    text.set_line_wrap(true);
+    text.set_valign(Align::Center);
     let mut notitext = noticlone2.imp().body.borrow_mut();
     *notitext = text;
 
-    appbox.add(&app_name);
-    bodybox.add(&appbox);
+    bodybox.add(&app_name);
     bodybox.add(&*notisummary);
     bodybox.add(&*notitext);
+    bodybox.set_child_packing(&*notisummary,true,true,5,PackType::Start);
+    bodybox.set_child_packing(&*notitext,true,true,5,PackType::End);
     regularbox.add(&bodybox);
     regularbox.add(&imagebox);
+    regularbox.set_child_packing(&bodybox,true,true,5,PackType::Start);
+    regularbox.set_child_packing(&imagebox,true,true,5,PackType::End);
     basebox.add(&regularbox);
     notibox.set_child(Some(&basebox));
 
@@ -251,6 +258,7 @@ pub fn initialize_ui(css_string: String) {
             .name("MainWindow")
             .application(app)
             .child(&mainbox)
+            .type_(WindowType::Toplevel)
             .build();
         window.set_vexpand_set(true);
         window.set_hexpand_set(false);
