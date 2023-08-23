@@ -5,7 +5,7 @@ use std::{
     cell::Cell,
     collections::HashMap,
     path::Path,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
     thread,
     time::Duration,
 };
@@ -34,17 +34,13 @@ pub fn remove_notification(
     notibox: &NotificationButton,
     id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
     timed_out: bool,
+    mutex: Arc<Mutex<bool>>,
 ) {
-    let removed_opt = notibox.imp().removed.lock();
-    if removed_opt.is_err() {
-        return;
-    }
-    let _guard = removed_opt.unwrap();
-    notibox.unmap();
-
+    let _guard = mutex.lock().unwrap();
     let id = notibox.imp().notification_id.get();
     id_map.write().unwrap().remove(&id);
 
+    notibox.unmap();
     mainbox.remove(&*notibox);
     window.queue_resize();
 
@@ -78,7 +74,11 @@ pub fn show_notification(
     notification: Notification,
     tx2: Arc<Sender<Arc<NotificationButton>>>,
     id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
+    mutex: Arc<Mutex<bool>>,
 ) {
+    let mutexclone = mutex.clone();
+    let mutexclone2 = mutex.clone();
+    let guard = mutex.lock().unwrap();
     let notibox = Arc::new(NotificationButton::new());
     notibox.imp().notification_id.set(notification.replaces_id);
     notibox.imp().reset.set(false);
@@ -88,11 +88,11 @@ pub fn show_notification(
     let noticlone2 = notibox.clone();
     let noticlone3 = notibox.clone();
     let noticlone4 = notibox.clone();
-    let removed_opt = noticlone4.imp().removed.lock();
-    if removed_opt.is_err() {
-        return;
-    }
-    let guard = removed_opt.unwrap();
+    // let removed_opt = noticlone4.imp().removed.lock();
+    // if removed_opt.is_err() {
+    //     return;
+    // }
+    // let guard = removed_opt.unwrap();
 
     let basebox = Box::new(gtk::Orientation::Vertical, 5);
     let regularbox = Box::new(gtk::Orientation::Horizontal, 5);
@@ -156,7 +156,7 @@ pub fn show_notification(
 
     notibox.connect_clicked(
         clone!(@weak noticount, @weak mainbox, @weak window => move |notibox| {
-            remove_notification(&mainbox, &window, noticount, notibox, id_map.clone(), false);
+            remove_notification(&mainbox, &window, noticount, notibox, id_map.clone(), false, mutexclone.clone());
         }),
     );
 
@@ -168,6 +168,7 @@ pub fn show_notification(
     mainbox.append(&*notibox);
     thread::spawn(move || {
         thread::sleep(Duration::from_secs(3));
+        let _guard = mutexclone2.lock();
         while notibox.imp().reset.get() == true {
             notibox.imp().reset.set(false);
             thread::sleep(Duration::from_secs(3));
@@ -183,7 +184,9 @@ pub fn show_notification(
 pub fn modify_notification(
     notification: Notification,
     id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
+    mutex: Arc<Mutex<bool>>,
 ) {
+    let _guard = mutex.lock().unwrap();
     let id = notification.replaces_id;
     let map = id_map.write().unwrap();
     let mut notibox = map.get(&id);
@@ -192,11 +195,11 @@ pub fn modify_notification(
         return;
     }
     let notibox_borrow = notibox_borrow_opt.unwrap().imp();
-    let removed_opt = notibox_borrow.removed.lock();
-    if removed_opt.is_err() {
-        return;
-    }
-    let _guard = removed_opt.unwrap();
+    // let removed_opt = notibox_borrow.removed.lock();
+    // if removed_opt.is_err() {
+    //     return;
+    // }
+    // let _guard = removed_opt.unwrap();
     notibox_borrow.reset.set(true);
     if let Some(progress) = notification.progress {
         if progress < 0 {
@@ -240,6 +243,8 @@ pub fn initialize_ui(css_string: String) {
             let mut server = NotificationServer::create(tx);
             server.run();
         });
+        let lock = Arc::new(Mutex::new(false));
+        let lock2 = lock.clone();
         let window = Window::builder()
             .name("MainWindow")
             .application(app)
@@ -293,9 +298,10 @@ pub fn initialize_ui(css_string: String) {
                     notification,
                     tx2.clone(),
                     id_map.clone(),
+                    lock2.clone(),
                 );
             } else {
-                modify_notification(notification, id_map.clone());
+                modify_notification(notification, id_map.clone(), lock2.clone());
             }
             glib::Continue(true)
         });
@@ -307,6 +313,7 @@ pub fn initialize_ui(css_string: String) {
                 &*notibox,
                 id_map_clone.clone(),
                 true,
+                lock.clone(),
             );
             drop(notibox);
             glib::Continue(true)
