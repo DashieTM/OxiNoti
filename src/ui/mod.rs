@@ -167,7 +167,7 @@ pub fn show_notification(
 
     // progress bar
     if notification.progress.is_some() {
-        notiimp.has_image.set(true);
+        notiimp.has_progbar.set(true);
         let progbar = ProgressBar::new();
         let mut shared_progbar = notiimp.fraction.borrow_mut();
         *shared_progbar = progbar;
@@ -279,20 +279,22 @@ pub fn modify_notification(
 
     // image
     let exists = notiimp.has_image.get();
-    if let Some(image_path) = notification.image_path {
-        if image_path == "" && notification.app_icon == "" && exists {
-            notibox_borrow.remove(&notiimp.image.take());
-            notiimp.has_image.set(false);
-        } else {
-            let mut image_borrow = notiimp.image.borrow_mut();
-            if !exists {
-                let img = Image::new();
-                *image_borrow = img;
-                notibox_borrow.add(&*image_borrow);
-                notiimp.has_image.set(true);
-            }
-            set_image(Some(image_path), notification.app_icon, &image_borrow);
+    let mut image_path = "".to_string();
+    if notification.image_path.is_some() {
+        image_path = notification.image_path.unwrap();
+    }
+    if image_path == "" && notification.app_icon == "" && exists {
+        notibox_borrow.remove(&notiimp.image.take());
+        notiimp.has_image.set(false);
+    } else {
+        let mut image_borrow = notiimp.image.borrow_mut();
+        if !exists {
+            let img = Image::new();
+            *image_borrow = img;
+            notibox_borrow.add(&*image_borrow);
+            notiimp.has_image.set(true);
         }
+        set_image(Some(image_path), notification.app_icon, &image_borrow);
     }
 }
 
