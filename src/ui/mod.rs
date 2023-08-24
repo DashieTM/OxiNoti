@@ -116,6 +116,8 @@ pub fn show_notification(
     let app_name = Label::new(Some(&notification.app_name));
     app_name.style_context().add_class("appname");
     app_name.set_ellipsize(pango::EllipsizeMode::End);
+    bodybox.add(&app_name);
+
     // summary
     if notification.summary != "" {
         notiimp.has_summary.set(true);
@@ -129,6 +131,7 @@ pub fn show_notification(
         bodybox.add(&*notisummary);
         bodybox.set_child_packing(&*notisummary, true, true, 5, PackType::Start);
     }
+
     // body
     if notification.body != "" {
         notiimp.has_body.set(true);
@@ -146,7 +149,6 @@ pub fn show_notification(
         bodybox.set_child_packing(&*notitext, true, true, 5, PackType::End);
     }
 
-    bodybox.add(&app_name);
     regularbox.add(&bodybox);
     regularbox.add(&imagebox);
     regularbox.set_child_packing(&bodybox, true, true, 5, PackType::Start);
@@ -240,7 +242,6 @@ pub fn modify_notification(
         }
     }
 
-    // summary
     let exists = notiimp.has_summary.get();
     if notification.summary == "" && exists {
         notibox_borrow.remove(&notiimp.summary.take());
