@@ -95,7 +95,7 @@ pub fn show_notification(
         .reset
         .store(true, std::sync::atomic::Ordering::SeqCst);
     notibox.set_opacity(1.0);
-    notibox.set_size_request(300, 120);
+    notibox.set_size_request(120, 120);
     let noticlone = notibox.clone();
     let noticlone2 = notibox.clone();
     let noticlone3 = notibox.clone();
@@ -262,7 +262,7 @@ pub fn initialize_ui(css_string: String) {
             .build();
         window.set_vexpand_set(true);
         window.set_hexpand_set(false);
-        window.set_default_size(300, 120);
+        window.set_default_size(120, 120);
 
         gtk_layer_shell::init_for_window(&window);
         // gtk_layer_shell::set_keyboard_mode(&window, gtk4_layer_shell::KeyboardMode::None);
@@ -290,7 +290,7 @@ pub fn initialize_ui(css_string: String) {
         let mainbox2 = mainbox.clone();
         mainbox.set_hexpand_set(false);
         mainbox.set_vexpand_set(true);
-        mainbox.set_size_request(300, 120);
+        mainbox.set_size_request(120, 120);
 
         rx.attach(None, move |notification| {
             if id_map

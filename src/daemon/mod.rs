@@ -343,7 +343,7 @@ impl NotificationServer {
                                 .image_path
                                 .clone()
                                 .unwrap_or_else(|| "".to_string()),
-                            notification.progress.clone().unwrap_or_else(|| 0),
+                            notification.progress.clone().unwrap_or_else(|| -1),
                         ));
                     }
                     Ok((notifications,))
