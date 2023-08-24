@@ -14,6 +14,10 @@ pub struct NotificationButton {
     pub summary: RefCell<Label>,
     pub image: RefCell<Image>,
     pub reset: AtomicBool,
+    pub has_body: Cell<bool>,
+    pub has_summary: Cell<bool>,
+    pub has_image: Cell<bool>,
+    pub has_progbar: Cell<bool>,
 }
 
 #[glib::object_subclass]

@@ -15,13 +15,14 @@ use gtk::{
     gdk,
     gio::SimpleAction,
     glib::{self, clone, Sender},
+    pango,
     prelude::{ApplicationExt, ApplicationExtManual},
     subclass::prelude::ObjectSubclassIsExt,
     traits::{
-        ButtonExt, ContainerExt, CssProviderExt, GtkWindowExt, ImageExt, LabelExt, ProgressBarExt,
-        StyleContextExt, WidgetExt, BoxExt,
+        BoxExt, ButtonExt, ContainerExt, CssProviderExt, GtkWindowExt, ImageExt, LabelExt,
+        ProgressBarExt, StyleContextExt, WidgetExt,
     },
-    Application, Box, Image, Label, ProgressBar, StyleContext, Window, PackType, pango, Align, WindowType,
+    Align, Application, Box, Image, Label, PackType, ProgressBar, StyleContext, Window, WindowType,
 };
 use gtk_layer_shell::Edge;
 
@@ -98,7 +99,7 @@ pub fn show_notification(
     notibox.set_size_request(120, 120);
     let noticlone = notibox.clone();
     let noticlone2 = notibox.clone();
-    let noticlone3 = notibox.clone();
+    let notiimp = noticlone2.imp();
 
     let basebox = Box::new(gtk::Orientation::Vertical, 5);
     let regularbox = Box::new(gtk::Orientation::Horizontal, 5);
@@ -111,56 +112,70 @@ pub fn show_notification(
     bodybox.style_context().add_class("bodybox");
     let imagebox = Box::new(gtk::Orientation::Horizontal, 5);
     imagebox.style_context().add_class("imagebox");
-    let summary = Label::new(Some(&notification.summary));
-    summary.style_context().add_class("summary");
-    summary.set_wrap_mode(pango::WrapMode::Word); 
-    summary.set_line_wrap(true);
-    summary.set_valign(Align::Center);
-    let mut notisummary = noticlone2.imp().summary.borrow_mut();
-    *notisummary = summary;
+    // app name
     let app_name = Label::new(Some(&notification.app_name));
     app_name.style_context().add_class("appname");
     app_name.set_ellipsize(pango::EllipsizeMode::End);
-    let (body, text_css) = class_from_html(notification.body);
-    let text = Label::new(None);
-    text.style_context().add_class("text");
-    text.style_context().add_class(&text_css);
-    text.set_text(body.as_str());
-    // text.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    text.set_wrap_mode(pango::WrapMode::Word); 
-    text.set_line_wrap(true);
-    text.set_valign(Align::Center);
-    let mut notitext = noticlone2.imp().body.borrow_mut();
-    *notitext = text;
+    // summary
+    if notification.summary != "" {
+        notiimp.has_summary.set(true);
+        let summary = Label::new(Some(&notification.summary));
+        summary.style_context().add_class("summary");
+        summary.set_wrap_mode(pango::WrapMode::Word);
+        summary.set_line_wrap(true);
+        summary.set_valign(Align::Center);
+        let mut notisummary = notiimp.summary.borrow_mut();
+        *notisummary = summary;
+        bodybox.add(&*notisummary);
+        bodybox.set_child_packing(&*notisummary, true, true, 5, PackType::Start);
+    }
+    // body
+    if notification.body != "" {
+        notiimp.has_body.set(true);
+        let (body, text_css) = class_from_html(notification.body);
+        let text = Label::new(None);
+        text.style_context().add_class("text");
+        text.style_context().add_class(&text_css);
+        text.set_text(body.as_str());
+        text.set_wrap_mode(pango::WrapMode::Word);
+        text.set_line_wrap(true);
+        text.set_valign(Align::Center);
+        let mut notitext = notiimp.body.borrow_mut();
+        *notitext = text;
+        bodybox.add(&*notitext);
+        bodybox.set_child_packing(&*notitext, true, true, 5, PackType::End);
+    }
 
     bodybox.add(&app_name);
-    bodybox.add(&*notisummary);
-    bodybox.add(&*notitext);
-    bodybox.set_child_packing(&*notisummary,true,true,5,PackType::Start);
-    bodybox.set_child_packing(&*notitext,true,true,5,PackType::End);
     regularbox.add(&bodybox);
     regularbox.add(&imagebox);
-    regularbox.set_child_packing(&bodybox,true,true,5,PackType::Start);
-    regularbox.set_child_packing(&imagebox,true,true,5,PackType::End);
+    regularbox.set_child_packing(&bodybox, true, true, 5, PackType::Start);
+    regularbox.set_child_packing(&imagebox, true, true, 5, PackType::End);
     basebox.add(&regularbox);
     notibox.set_child(Some(&basebox));
 
+    // image
     let image = Image::new();
-    set_image(notification.image_path, notification.app_icon, &image);
-    let mut notiimage = noticlone2.imp().image.borrow_mut();
-    *notiimage = image;
-    imagebox.add(&*notiimage);
+    if set_image(notification.image_path, notification.app_icon, &image) {
+        notiimp.has_image.set(true);
+        let mut notiimage = notiimp.image.borrow_mut();
+        *notiimage = image;
+        imagebox.add(&*notiimage);
+    }
 
-    let progbar = ProgressBar::new();
-    let mut shared_progbar = noticlone3.imp().fraction.borrow_mut();
-    *shared_progbar = progbar;
-
-    if let Some(progress) = notification.progress {
-        if progress < 0 {
-            return;
+    // progress bar
+    if notification.progress.is_some() {
+        notiimp.has_image.set(true);
+        let progbar = ProgressBar::new();
+        let mut shared_progbar = notiimp.fraction.borrow_mut();
+        *shared_progbar = progbar;
+        if let Some(progress) = notification.progress {
+            if progress < 0 {
+                return;
+            }
+            shared_progbar.set_fraction(progress as f64 / 100.0);
+            basebox.add(&*shared_progbar);
         }
-        shared_progbar.set_fraction(progress as f64 / 100.0);
-        basebox.add(&*shared_progbar);
     }
 
     noticount.update(|x| x + 1);
@@ -202,35 +217,82 @@ pub fn modify_notification(
     if notibox_borrow_opt.is_none() {
         return;
     }
-    let notibox_borrow = notibox_borrow_opt.unwrap().imp();
-    notibox_borrow
+    let notibox_borrow = notibox_borrow_opt.unwrap();
+    let notiimp = notibox_borrow.imp();
+    notiimp
         .reset
         .store(true, std::sync::atomic::Ordering::SeqCst);
+
+    // progress bar
+    let exists = notiimp.has_progbar.get();
     if let Some(progress) = notification.progress {
-        if progress < 0 {
-            return;
+        if progress < 0 && exists {
+            notibox_borrow.remove(&notiimp.fraction.take());
+            notiimp.has_progbar.set(false);
+        } else if progress > 0 {
+            let mut progbar = notiimp.fraction.borrow_mut();
+            if !exists {
+                let newprog = ProgressBar::new();
+                *progbar = newprog;
+                notiimp.has_progbar.set(true);
+            }
+            progbar.set_fraction(progress as f64 / 100.0);
         }
-        notibox_borrow
-            .fraction
-            .borrow_mut()
-            .set_fraction(progress as f64 / 100.0);
     }
-    let (text, css_classes) = class_from_html(notification.summary);
-    let text_borrow = notibox_borrow.summary.borrow_mut();
-    text_borrow.set_text(text.as_str());
-    text_borrow.style_context().add_class("summary");
-    text_borrow.style_context().add_class(&css_classes);
-    let (text, css_classes) = class_from_html(notification.body);
-    let text_borrow = notibox_borrow.body.borrow_mut();
-    text_borrow.set_text(text.as_str());
-    text_borrow.style_context().add_class("text");
-    text_borrow.style_context().add_class(&css_classes);
-    let image_borrow = notibox_borrow.image.borrow_mut();
-    set_image(
-        notification.image_path,
-        notification.app_icon,
-        &image_borrow,
-    );
+
+    // summary
+    let exists = notiimp.has_summary.get();
+    if notification.summary == "" && exists {
+        notibox_borrow.remove(&notiimp.summary.take());
+        notiimp.has_summary.set(false);
+    } else if notification.summary != "" {
+        let (text, css_classes) = class_from_html(notification.summary);
+        let mut text_borrow = notiimp.summary.borrow_mut();
+        if !exists {
+            *text_borrow = Label::new(None);
+            notibox_borrow.add(&*text_borrow);
+            notiimp.has_summary.set(true);
+        }
+        text_borrow.set_text(text.as_str());
+        text_borrow.style_context().add_class("summary");
+        text_borrow.style_context().add_class(&css_classes);
+    }
+
+    // body
+    let exists = notiimp.has_body.get();
+    if notification.body == "" && exists {
+        notibox_borrow.remove(&notiimp.body.take());
+        notiimp.has_body.set(false);
+    } else if notification.body != "" {
+        let (text, css_classes) = class_from_html(notification.body);
+        let mut text_borrow = notiimp.body.borrow_mut();
+        if !exists {
+            *text_borrow = Label::new(None);
+            notibox_borrow.add(&*text_borrow);
+            notiimp.has_body.set(true);
+        }
+        text_borrow.set_text(text.as_str());
+        text_borrow.style_context().add_class("text");
+        text_borrow.style_context().add_class(&css_classes);
+    }
+
+    // image
+    let exists = notiimp.has_image.get();
+    if let Some(image_path) = notification.image_path {
+        if image_path == "" && notification.app_icon == "" && exists {
+            notibox_borrow.remove(&notiimp.image.take());
+            notiimp.has_image.set(false);
+        } else {
+            let mut image_borrow = notiimp.image.borrow_mut();
+            if !exists {
+                let img = Image::new();
+                *image_borrow = img;
+                notibox_borrow.add(&*image_borrow);
+                notiimp.has_image.set(true);
+            }
+            set_image(Some(image_path), notification.app_icon, &image_borrow);
+        }
+    }
 }
 
 pub fn initialize_ui(css_string: String) {
@@ -377,7 +439,7 @@ fn class_from_html(mut body: String) -> (String, String) {
     (body, String::from(ret))
 }
 
-fn set_image(picture: Option<String>, icon: String, image: &Image) {
+fn set_image(picture: Option<String>, icon: String, image: &Image) -> bool {
     let mut pixbuf: Option<Pixbuf> = None;
     let resize_pixbuf = |pixbuf: Option<Pixbuf>| {
         pixbuf
@@ -402,10 +464,14 @@ fn set_image(picture: Option<String>, icon: String, image: &Image) {
             pixbuf = resize_pixbuf(pixbuf);
             image.set_pixbuf(Some(&pixbuf.unwrap()));
             image.style_context().add_class("picture");
-        } else {
+            return true;
+        } else if icon != "" {
             (use_icon)(pixbuf);
+            return true;
         }
-    } else {
+    } else if icon != "" {
         (use_icon)(pixbuf);
+        return true;
     }
+    false
 }
