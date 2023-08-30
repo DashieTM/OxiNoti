@@ -335,6 +335,21 @@ impl NotificationServer {
                                 "/org/freedesktop/NotificationCenter",
                                 Duration::from_millis(1000),
                             );
+                            let raw_data: ImageData;
+                            if notification.image_data.is_some() {
+                                raw_data = notification.image_data.clone().unwrap();
+                            } else {
+                                raw_data = ImageData::empty();
+                            }
+                            let image_data = (
+                                raw_data.width,
+                                raw_data.height,
+                                raw_data.rowstride,
+                                raw_data.has_alpha,
+                                raw_data.bits_per_sample,
+                                raw_data.channels,
+                                raw_data.data,
+                            );
                             let _: Result<(), dbus::Error> = proxy.method_call(
                                 "org.freedesktop.NotificationCenter",
                                 "Notify",
@@ -349,6 +364,7 @@ impl NotificationServer {
                                     notification.urgency.to_i32(),
                                     notification.image_path.unwrap_or_else(|| "".to_string()),
                                     notification.progress.unwrap_or_else(|| -1),
+                                    image_data,
                                 ),
                             );
                         });
