@@ -1,5 +1,22 @@
+/*
+Copyright © 2023 Fabio Lenherr
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <http://www.gnu.org/licenses/>.
+*/
+
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fmt::Display,
     hash::Hash,
     sync::{Arc, Mutex},
@@ -8,10 +25,37 @@ use std::{
 };
 
 use dbus::{
-    arg::{self, RefArg},
+    arg::{self, cast, prop_cast, RefArg},
     blocking::Connection,
 };
 use gtk::glib::Sender;
+
+use crate::ui::utils::config::Config;
+
+#[derive(Clone, Eq, PartialEq, PartialOrd, Ord)]
+pub struct ImageData {
+    pub width: i32,
+    pub height: i32,
+    pub rowstride: i32,
+    pub has_alpha: bool,
+    pub bits_per_sample: i32,
+    pub channels: i32,
+    pub data: Vec<u8>,
+}
+
+impl ImageData {
+    pub fn empty() -> Self {
+        Self {
+            width: -1,
+            height: -1,
+            rowstride: -1,
+            has_alpha: false,
+            bits_per_sample: -1,
+            channels: -1,
+            data: Vec::new(),
+        }
+    }
+}
 
 #[derive(Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Urgency {
@@ -23,17 +67,17 @@ pub enum Urgency {
 impl Urgency {
     fn from_i32(value: i32) -> Result<Urgency, &'static str> {
         match value {
-            1 => Ok(Urgency::Low),
-            2 => Ok(Urgency::Normal),
-            3 => Ok(Urgency::Urgent),
+            0 => Ok(Urgency::Low),
+            1 => Ok(Urgency::Normal),
+            2 => Ok(Urgency::Urgent),
             _ => Err("invalid number, only 1,2 or 3 allowed"),
         }
     }
     fn to_i32(&self) -> i32 {
         match self {
-            Urgency::Low => 1,
-            Urgency::Normal => 2,
-            Urgency::Urgent => 3,
+            Urgency::Low => 0,
+            Urgency::Normal => 1,
+            Urgency::Urgent => 2,
         }
     }
     pub fn to_str(&self) -> &str {
@@ -63,6 +107,7 @@ pub struct Notification {
     pub urgency: Urgency,
     pub image_path: Option<String>,
     pub progress: Option<i32>,
+    pub image_data: Option<ImageData>,
 }
 
 impl Clone for Notification {
@@ -78,6 +123,7 @@ impl Clone for Notification {
             urgency: self.urgency.clone(),
             image_path: self.image_path.clone(),
             progress: self.progress.clone(),
+            image_data: self.image_data.clone(),
         }
     }
 }
@@ -125,6 +171,20 @@ impl Notification {
                     .to_string(),
             );
         }
+        let mut image_data = None;
+        let image_data_opt: Option<&VecDeque<Box<dyn RefArg>>> = prop_cast(&hints, "image-data");
+        if image_data_opt.is_some() {
+            let raw = image_data_opt.unwrap();
+            image_data = Some(ImageData {
+                width: *cast::<i32>(&raw[0]).unwrap(),
+                height: *cast::<i32>(&raw[1]).unwrap(),
+                rowstride: *cast::<i32>(&raw[2]).unwrap(),
+                has_alpha: *cast::<bool>(&raw[3]).unwrap(),
+                bits_per_sample: *cast::<i32>(&raw[4]).unwrap(),
+                channels: *cast::<i32>(&raw[5]).unwrap(),
+                data: cast::<Vec<u8>>(&raw[6]).unwrap().clone(),
+            });
+        }
         let mut progress = None;
         let progress_opt = hints.get("progress");
         if progress_opt.is_some() {
@@ -147,9 +207,11 @@ impl Notification {
             urgency,
             image_path,
             progress,
+            image_data,
         }
     }
 
+    #[allow(dead_code)]
     pub fn print(&self) {
         print!(
             "Notification {} with summary {} from app {}\n
@@ -227,7 +289,7 @@ impl NotificationServer {
         }
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self, config: Arc<Config>) {
         let c = Connection::new_session().unwrap();
         c.request_name("org.freedesktop.Notifications", false, true, false)
             .unwrap();
@@ -245,7 +307,7 @@ impl NotificationServer {
                     "hints",
                     "expire_timeout",
                 ),
-                ("reply",),
+                ("id",),
                 move |_,
                       serverref: &mut Arc<Mutex<NotificationWrapper>>,
                       (
@@ -277,10 +339,14 @@ impl NotificationServer {
                         hints,
                         expire_timeout,
                     );
-                    notification.print();
                     let mut server = serverref.lock().unwrap();
                     server.add_notification(&mut notification);
-                    if !server.do_not_disturb && !server.notification_center {
+                    if urgency_should_ignore_dnd(
+                        server.do_not_disturb,
+                        config.dnd_override,
+                        &notification.urgency,
+                    ) && !server.notification_center
+                    {
                         server
                             .handle
                             .send(notification)
@@ -292,6 +358,21 @@ impl NotificationServer {
                                 "org.freedesktop.NotificationCenter",
                                 "/org/freedesktop/NotificationCenter",
                                 Duration::from_millis(1000),
+                            );
+                            let raw_data: ImageData;
+                            if notification.image_data.is_some() {
+                                raw_data = notification.image_data.clone().unwrap();
+                            } else {
+                                raw_data = ImageData::empty();
+                            }
+                            let image_data = (
+                                raw_data.width,
+                                raw_data.height,
+                                raw_data.rowstride,
+                                raw_data.has_alpha,
+                                raw_data.bits_per_sample,
+                                raw_data.channels,
+                                raw_data.data,
                             );
                             let _: Result<(), dbus::Error> = proxy.method_call(
                                 "org.freedesktop.NotificationCenter",
@@ -307,11 +388,12 @@ impl NotificationServer {
                                     notification.urgency.to_i32(),
                                     notification.image_path.unwrap_or_else(|| "".to_string()),
                                     notification.progress.unwrap_or_else(|| -1),
+                                    image_data,
                                 ),
                             );
                         });
                     }
-                    Ok(("ok",))
+                    Ok((replaces_id,))
                 },
             );
             c.method(
@@ -330,6 +412,21 @@ impl NotificationServer {
                 move |_, serverref: &mut Arc<Mutex<NotificationWrapper>>, ()| {
                     let mut notifications = Vec::new();
                     for notification in serverref.lock().unwrap().get_all_notifications().iter() {
+                        let raw_data: ImageData;
+                        if notification.image_data.is_some() {
+                            raw_data = notification.image_data.clone().unwrap();
+                        } else {
+                            raw_data = ImageData::empty();
+                        }
+                        let image_data = (
+                            raw_data.width,
+                            raw_data.height,
+                            raw_data.rowstride,
+                            raw_data.has_alpha,
+                            raw_data.bits_per_sample,
+                            raw_data.channels,
+                            raw_data.data,
+                        );
                         notifications.push((
                             notification.app_name.clone(),
                             notification.replaces_id.clone(),
@@ -343,7 +440,8 @@ impl NotificationServer {
                                 .image_path
                                 .clone()
                                 .unwrap_or_else(|| "".to_string()),
-                            notification.progress.clone().unwrap_or_else(|| 0),
+                            notification.progress.clone().unwrap_or_else(|| -1),
+                            image_data,
                         ));
                     }
                     Ok((notifications,))
@@ -412,4 +510,24 @@ pub fn get_capabilities() -> Vec<String> {
         "persistence".to_string(),
     ]
     .into()
+}
+
+fn urgency_should_ignore_dnd(
+    dnd_enabled: bool,
+    dnd_ignore_threshold: i32,
+    urgency: &Urgency,
+) -> bool {
+    if !dnd_enabled {
+        return true;
+    }
+    let necessary_urgency = match dnd_ignore_threshold {
+        0 => Some(Urgency::Low),
+        1 => Some(Urgency::Normal),
+        2 => Some(Urgency::Urgent),
+        _ => None,
+    };
+    if necessary_urgency.is_none() || urgency < &necessary_urgency.unwrap() {
+        return false;
+    }
+    true
 }

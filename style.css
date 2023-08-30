@@ -5,14 +5,13 @@
 }
 
 .MainBox {
-  /* background-color: rgba(0, 0, 0, 0); */
+  background-color: rgba(0, 0, 0, 0);
   padding: 0px;
   /* opacity: 0; */
 }
 
 .NotificationBox {
-  opacity: 100;
-  background-color: black;
+  opacity: 90;
   border-radius: 5px;
   border: solid 1px;
   margin: 5px;
@@ -20,6 +19,7 @@
 }
 
 .NotificationLow {
+  border-color: green;
 }
 
 .NotificationNormal {
@@ -35,7 +35,6 @@
 }
 
 .bodybox {
-  margin: 0px 10px 0px 0px;
 }
 
 .imagebox {
