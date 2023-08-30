@@ -1,4 +1,21 @@
-mod utils;
+/*
+Copyright © 2023 Fabio Lenherr
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <http://www.gnu.org/licenses/>.
+*/
+
+pub mod utils;
 
 use std::{
     borrow::BorrowMut,
@@ -26,9 +43,12 @@ use gtk::{
 };
 use gtk_layer_shell::Edge;
 
-use crate::daemon::{ImageData, Notification, NotificationServer};
+use crate::{
+    daemon::{ImageData, Notification, NotificationServer},
+    ui::utils::config::parse_config,
+};
 
-use self::utils::NotificationButton;
+use self::utils::{config::Config, NotificationButton};
 
 const APP_ID: &str = "org.dashie.oxinoti";
 
@@ -85,6 +105,7 @@ pub fn show_notification(
     tx2: Arc<Sender<Arc<NotificationButton>>>,
     id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
     mutex: Arc<Mutex<bool>>,
+    config: Arc<Config>,
 ) {
     let mutexclone = mutex.clone();
     let _guard = mutex.lock().unwrap();
@@ -99,9 +120,12 @@ pub fn show_notification(
     notibox.set_opacity(1.0);
     notibox.set_size_request(120, 5);
     notibox.style_context().add_class("NotificationBox");
+    let urgency_string = notification.urgency.to_str();
+    notibox.style_context().add_class(urgency_string);
     notibox
-        .style_context()
-        .add_class(notification.urgency.to_str());
+        .imp()
+        .previous_urgency
+        .set(urgency_string.to_string());
 
     let noticlone = notibox.clone();
     let noticlone2 = notibox.clone();
@@ -208,12 +232,19 @@ pub fn show_notification(
         .insert(notification.replaces_id, noticlone);
     mainbox.add(&*notibox);
 
+    let mut notibodybox = notiimp.bodybox.borrow_mut();
+    *notibodybox = bodybox;
+    let mut notibasebox = notiimp.basebox.borrow_mut();
+    *notibasebox = basebox;
+    let mut notiregularbox = notiimp.regularbox.borrow_mut();
+    *notiregularbox = regularbox;
+
     // thread removes notification after timeout
     thread::spawn(clone!(@weak notibox => move || {
-        thread::sleep(Duration::from_secs(3));
+        thread::sleep(Duration::from_secs(config.timeout));
         while notibox.imp().reset.load(std::sync::atomic::Ordering::SeqCst) == true {
             notibox.imp().reset.store(false, std::sync::atomic::Ordering::SeqCst);
-            thread::sleep(Duration::from_secs(3));
+            thread::sleep(Duration::from_secs(config.timeout));
         }
         tx2.send(notibox).unwrap();
     }));
@@ -235,21 +266,30 @@ pub fn modify_notification(
     }
     let notibox_borrow = notibox_borrow_opt.unwrap();
     let notiimp = notibox_borrow.imp();
+    let notibodybox = notiimp.bodybox.borrow_mut();
+    let notibasebox = notiimp.basebox.borrow_mut();
+    let notiregularbox = notiimp.regularbox.borrow_mut();
     notiimp
         .reset
         .store(true, std::sync::atomic::Ordering::SeqCst);
+    notibox_borrow.style_context().restore();
+    let urgency_string = notification.urgency.to_str();
+    notibox_borrow.style_context().remove_class(&notiimp.previous_urgency.take());
+    notiimp.previous_urgency.set(urgency_string.to_string());
+    notibox_borrow.style_context().add_class(urgency_string);
 
     // progress bar
     let exists = notiimp.has_progbar.get();
     if let Some(progress) = notification.progress {
         if progress < 0 && exists {
-            notibox_borrow.remove(&notiimp.fraction.take());
+            notibasebox.remove(&notiimp.fraction.take());
             notiimp.has_progbar.set(false);
         } else if progress > 0 {
             let mut progbar = notiimp.fraction.borrow_mut();
             if !exists {
                 let newprog = ProgressBar::new();
                 *progbar = newprog;
+                notibasebox.add(&*progbar);
                 notiimp.has_progbar.set(true);
             }
             progbar.set_fraction(progress as f64 / 100.0);
@@ -258,14 +298,14 @@ pub fn modify_notification(
 
     let exists = notiimp.has_summary.get();
     if notification.summary == "" && exists {
-        notibox_borrow.remove(&notiimp.summary.take());
+        notibodybox.remove(&notiimp.summary.take());
         notiimp.has_summary.set(false);
     } else if notification.summary != "" {
         let (text, css_classes) = class_from_html(notification.summary);
         let mut text_borrow = notiimp.summary.borrow_mut();
         if !exists {
             *text_borrow = Label::new(None);
-            notibox_borrow.add(&*text_borrow);
+            notibodybox.add(&*text_borrow);
             notiimp.has_summary.set(true);
         }
         text_borrow.set_text(text.as_str());
@@ -276,14 +316,14 @@ pub fn modify_notification(
     // body
     let exists = notiimp.has_body.get();
     if notification.body == "" && exists {
-        notibox_borrow.remove(&notiimp.body.take());
+        notibodybox.remove(&notiimp.body.take());
         notiimp.has_body.set(false);
     } else if notification.body != "" {
         let (text, css_classes) = class_from_html(notification.body);
         let mut text_borrow = notiimp.body.borrow_mut();
         if !exists {
             *text_borrow = Label::new(None);
-            notibox_borrow.add(&*text_borrow);
+            notibodybox.add(&*text_borrow);
             notiimp.has_body.set(true);
         }
         text_borrow.set_text(text.as_str());
@@ -298,14 +338,14 @@ pub fn modify_notification(
         image_path = notification.image_path.unwrap();
     }
     if image_path == "" && notification.app_icon == "" && exists {
-        notibox_borrow.remove(&notiimp.image.take());
+        notiregularbox.remove(&notiimp.image.take());
         notiimp.has_image.set(false);
     } else {
         let mut image_borrow = notiimp.image.borrow_mut();
         if !exists {
             let img = Image::new();
             *image_borrow = img;
-            notibox_borrow.add(&*image_borrow);
+            notiregularbox.add(&*image_borrow);
             notiimp.has_image.set(true);
         }
         set_image(
@@ -317,7 +357,7 @@ pub fn modify_notification(
     }
 }
 
-pub fn initialize_ui(css_string: String) {
+pub fn initialize_ui(css_string: String, config_file: String) {
     let app = Application::builder().application_id(APP_ID).build();
     app.connect_startup(move |_| {
         if !gtk::is_initialized() {
@@ -330,9 +370,11 @@ pub fn initialize_ui(css_string: String) {
         let (tx, rx) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
         let (tx2_initial, rx2) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
         let tx2 = Arc::new(tx2_initial);
+        let config = Arc::new(parse_config(&config_file));
+        let configrc = config.clone();
         thread::spawn(move || {
             let mut server = NotificationServer::create(tx);
-            server.run();
+            server.run(configrc);
         });
         let lock = Arc::new(Mutex::new(false));
         let lock2 = lock.clone();
@@ -391,6 +433,7 @@ pub fn initialize_ui(css_string: String) {
                     tx2.clone(),
                     id_map.clone(),
                     lock2.clone(),
+                    config.clone(),
                 );
             } else {
                 // modify notification if id is already in map

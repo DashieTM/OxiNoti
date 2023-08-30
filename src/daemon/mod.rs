@@ -1,3 +1,20 @@
+/*
+Copyright © 2023 Fabio Lenherr
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <http://www.gnu.org/licenses/>.
+*/
+
 use std::{
     collections::{HashMap, VecDeque},
     fmt::Display,
@@ -12,6 +29,8 @@ use dbus::{
     blocking::Connection,
 };
 use gtk::glib::Sender;
+
+use crate::ui::utils::config::Config;
 
 #[derive(Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct ImageData {
@@ -48,17 +67,17 @@ pub enum Urgency {
 impl Urgency {
     fn from_i32(value: i32) -> Result<Urgency, &'static str> {
         match value {
-            1 => Ok(Urgency::Low),
-            2 => Ok(Urgency::Normal),
-            3 => Ok(Urgency::Urgent),
+            0 => Ok(Urgency::Low),
+            1 => Ok(Urgency::Normal),
+            2 => Ok(Urgency::Urgent),
             _ => Err("invalid number, only 1,2 or 3 allowed"),
         }
     }
     fn to_i32(&self) -> i32 {
         match self {
-            Urgency::Low => 1,
-            Urgency::Normal => 2,
-            Urgency::Urgent => 3,
+            Urgency::Low => 0,
+            Urgency::Normal => 1,
+            Urgency::Urgent => 2,
         }
     }
     pub fn to_str(&self) -> &str {
@@ -270,7 +289,7 @@ impl NotificationServer {
         }
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self, config: Arc<Config>) {
         let c = Connection::new_session().unwrap();
         c.request_name("org.freedesktop.Notifications", false, true, false)
             .unwrap();
@@ -322,7 +341,12 @@ impl NotificationServer {
                     );
                     let mut server = serverref.lock().unwrap();
                     server.add_notification(&mut notification);
-                    if !server.do_not_disturb && !server.notification_center {
+                    if urgency_should_ignore_dnd(
+                        server.do_not_disturb,
+                        config.dnd_override,
+                        &notification.urgency,
+                    ) && !server.notification_center
+                    {
                         server
                             .handle
                             .send(notification)
@@ -486,4 +510,24 @@ pub fn get_capabilities() -> Vec<String> {
         "persistence".to_string(),
     ]
     .into()
+}
+
+fn urgency_should_ignore_dnd(
+    dnd_enabled: bool,
+    dnd_ignore_threshold: i32,
+    urgency: &Urgency,
+) -> bool {
+    if !dnd_enabled {
+        return true;
+    }
+    let necessary_urgency = match dnd_ignore_threshold {
+        0 => Some(Urgency::Low),
+        1 => Some(Urgency::Normal),
+        2 => Some(Urgency::Urgent),
+        _ => None,
+    };
+    if necessary_urgency.is_none() || urgency < &necessary_urgency.unwrap() {
+        return false;
+    }
+    true
 }
