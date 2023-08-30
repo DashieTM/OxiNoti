@@ -26,7 +26,7 @@ use gtk::{
 };
 use gtk_layer_shell::Edge;
 
-use crate::daemon::{Notification, NotificationServer};
+use crate::daemon::{ImageData, Notification, NotificationServer};
 
 use self::utils::NotificationButton;
 
@@ -88,6 +88,7 @@ pub fn show_notification(
 ) {
     let mutexclone = mutex.clone();
     let _guard = mutex.lock().unwrap();
+
     let notibox = Arc::new(NotificationButton::new());
     notibox.style_context().add_class("NotificationBox");
     notibox.imp().notification_id.set(notification.replaces_id);
@@ -96,26 +97,27 @@ pub fn show_notification(
         .reset
         .store(true, std::sync::atomic::Ordering::SeqCst);
     notibox.set_opacity(1.0);
-    notibox.set_size_request(120, 120);
+    notibox.set_size_request(120, 5);
+    notibox.style_context().add_class("NotificationBox");
+    notibox
+        .style_context()
+        .add_class(notification.urgency.to_str());
+
     let noticlone = notibox.clone();
     let noticlone2 = notibox.clone();
     let notiimp = noticlone2.imp();
 
     let basebox = Box::new(gtk::Orientation::Vertical, 5);
     let regularbox = Box::new(gtk::Orientation::Horizontal, 5);
-    regularbox.set_homogeneous(true);
-    notibox.style_context().add_class("NotificationBox");
-    notibox
-        .style_context()
-        .add_class(notification.urgency.to_str());
+
     let bodybox = Box::new(gtk::Orientation::Vertical, 5);
     bodybox.style_context().add_class("bodybox");
-    let imagebox = Box::new(gtk::Orientation::Horizontal, 5);
-    imagebox.style_context().add_class("imagebox");
+
     // app name
     let app_name = Label::new(Some(&notification.app_name));
     app_name.style_context().add_class("appname");
-    app_name.set_ellipsize(pango::EllipsizeMode::End);
+    app_name.set_valign(Align::Center);
+    app_name.set_halign(Align::Center);
     bodybox.add(&app_name);
 
     // summary
@@ -124,8 +126,10 @@ pub fn show_notification(
         let summary = Label::new(Some(&notification.summary));
         summary.style_context().add_class("summary");
         summary.set_wrap_mode(pango::WrapMode::Word);
+        summary.set_width_chars(15);
         summary.set_line_wrap(true);
         summary.set_valign(Align::Center);
+        summary.set_halign(Align::Center);
         let mut notisummary = notiimp.summary.borrow_mut();
         *notisummary = summary;
         bodybox.add(&*notisummary);
@@ -141,8 +145,10 @@ pub fn show_notification(
         text.style_context().add_class(&text_css);
         text.set_text(body.as_str());
         text.set_wrap_mode(pango::WrapMode::Word);
+        text.set_width_chars(15);
         text.set_line_wrap(true);
         text.set_valign(Align::Center);
+        text.set_halign(Align::Center);
         let mut notitext = notiimp.body.borrow_mut();
         *notitext = text;
         bodybox.add(&*notitext);
@@ -150,19 +156,24 @@ pub fn show_notification(
     }
 
     regularbox.add(&bodybox);
-    regularbox.add(&imagebox);
     regularbox.set_child_packing(&bodybox, true, true, 5, PackType::Start);
-    regularbox.set_child_packing(&imagebox, true, true, 5, PackType::End);
+    bodybox.set_halign(gtk::Align::Fill);
     basebox.add(&regularbox);
     notibox.set_child(Some(&basebox));
 
     // image
     let image = Image::new();
-    if set_image(notification.image_path, notification.app_icon, &image) {
+    if set_image(
+        notification.image_data,
+        notification.image_path,
+        notification.app_icon,
+        &image,
+    ) {
         notiimp.has_image.set(true);
         let mut notiimage = notiimp.image.borrow_mut();
         *notiimage = image;
-        imagebox.add(&*notiimage);
+        regularbox.add(&*notiimage);
+        regularbox.set_child_packing(&*notiimage, true, true, 5, PackType::End);
     }
 
     // progress bar
@@ -182,6 +193,7 @@ pub fn show_notification(
 
     noticount.update(|x| x + 1);
 
+    // id_map used to retrieve notification afterwards
     let id_map_clone = id_map.clone();
     let id = notibox.imp().notification_id.get();
     notibox.connect_clicked(
@@ -195,6 +207,8 @@ pub fn show_notification(
         .unwrap()
         .insert(notification.replaces_id, noticlone);
     mainbox.add(&*notibox);
+
+    // thread removes notification after timeout
     thread::spawn(clone!(@weak notibox => move || {
         thread::sleep(Duration::from_secs(3));
         while notibox.imp().reset.load(std::sync::atomic::Ordering::SeqCst) == true {
@@ -294,7 +308,12 @@ pub fn modify_notification(
             notibox_borrow.add(&*image_borrow);
             notiimp.has_image.set(true);
         }
-        set_image(Some(image_path), notification.app_icon, &image_borrow);
+        set_image(
+            notification.image_data,
+            Some(image_path),
+            notification.app_icon,
+            &image_borrow,
+        );
     }
 }
 
@@ -330,7 +349,6 @@ pub fn initialize_ui(css_string: String) {
         window.set_default_size(120, 120);
 
         gtk_layer_shell::init_for_window(&window);
-        // gtk_layer_shell::set_keyboard_mode(&window, gtk4_layer_shell::KeyboardMode::None);
         gtk_layer_shell::auto_exclusive_zone_enable(&window);
         gtk_layer_shell::set_layer(&window, gtk_layer_shell::Layer::Overlay);
         gtk_layer_shell::set_anchor(&window, Edge::Right, true);
@@ -357,6 +375,7 @@ pub fn initialize_ui(css_string: String) {
         mainbox.set_vexpand_set(true);
         mainbox.set_size_request(120, 120);
 
+        // new notification added
         rx.attach(None, move |notification| {
             if id_map
                 .read()
@@ -374,10 +393,12 @@ pub fn initialize_ui(css_string: String) {
                     lock2.clone(),
                 );
             } else {
+                // modify notification if id is already in map
                 modify_notification(notification, id_map.clone(), lock2.clone());
             }
             glib::Continue(true)
         });
+        // handle notification removal
         rx2.attach(None, move |notibox| {
             let id = notibox.imp().notification_id.get();
             drop(notibox);
@@ -442,7 +463,12 @@ fn class_from_html(mut body: String) -> (String, String) {
     (body, String::from(ret))
 }
 
-fn set_image(picture: Option<String>, icon: String, image: &Image) -> bool {
+fn set_image(
+    data: Option<ImageData>,
+    picture: Option<String>,
+    icon: String,
+    image: &Image,
+) -> bool {
     let mut pixbuf: Option<Pixbuf> = None;
     let resize_pixbuf = |pixbuf: Option<Pixbuf>| {
         pixbuf
@@ -474,6 +500,22 @@ fn set_image(picture: Option<String>, icon: String, image: &Image) -> bool {
         }
     } else if icon != "" {
         (use_icon)(pixbuf);
+        return true;
+    } else if data.is_some() {
+        let image_data = data.unwrap();
+        let bytes = gtk::glib::Bytes::from(&image_data.data);
+        pixbuf = Some(Pixbuf::from_bytes(
+            &bytes,
+            gdk_pixbuf::Colorspace::Rgb,
+            image_data.has_alpha,
+            image_data.bits_per_sample,
+            image_data.width,
+            image_data.height,
+            image_data.rowstride,
+        ));
+        pixbuf = resize_pixbuf(pixbuf);
+        image.set_pixbuf(Some(&pixbuf.unwrap()));
+        image.style_context().add_class("picture");
         return true;
     }
     false

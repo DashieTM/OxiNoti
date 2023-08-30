@@ -31,7 +31,6 @@ fn main() {
         }
     } else {
         css_string = create_config_dir().to_str().unwrap().into();
-        println!("{css_string}");
     }
 
     initialize_ui(css_string);

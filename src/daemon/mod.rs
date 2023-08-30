@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fmt::Display,
     hash::Hash,
     sync::{Arc, Mutex},
@@ -8,10 +8,35 @@ use std::{
 };
 
 use dbus::{
-    arg::{self, RefArg},
+    arg::{self, cast, prop_cast, RefArg},
     blocking::Connection,
 };
 use gtk::glib::Sender;
+
+#[derive(Clone, Eq, PartialEq, PartialOrd, Ord)]
+pub struct ImageData {
+    pub width: i32,
+    pub height: i32,
+    pub rowstride: i32,
+    pub has_alpha: bool,
+    pub bits_per_sample: i32,
+    pub channels: i32,
+    pub data: Vec<u8>,
+}
+
+impl ImageData {
+    pub fn empty() -> Self {
+        Self {
+            width: -1,
+            height: -1,
+            rowstride: -1,
+            has_alpha: false,
+            bits_per_sample: -1,
+            channels: -1,
+            data: Vec::new(),
+        }
+    }
+}
 
 #[derive(Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Urgency {
@@ -63,6 +88,7 @@ pub struct Notification {
     pub urgency: Urgency,
     pub image_path: Option<String>,
     pub progress: Option<i32>,
+    pub image_data: Option<ImageData>,
 }
 
 impl Clone for Notification {
@@ -78,6 +104,7 @@ impl Clone for Notification {
             urgency: self.urgency.clone(),
             image_path: self.image_path.clone(),
             progress: self.progress.clone(),
+            image_data: self.image_data.clone(),
         }
     }
 }
@@ -125,6 +152,20 @@ impl Notification {
                     .to_string(),
             );
         }
+        let mut image_data = None;
+        let image_data_opt: Option<&VecDeque<Box<dyn RefArg>>> = prop_cast(&hints, "image-data");
+        if image_data_opt.is_some() {
+            let raw = image_data_opt.unwrap();
+            image_data = Some(ImageData {
+                width: *cast::<i32>(&raw[0]).unwrap(),
+                height: *cast::<i32>(&raw[1]).unwrap(),
+                rowstride: *cast::<i32>(&raw[2]).unwrap(),
+                has_alpha: *cast::<bool>(&raw[3]).unwrap(),
+                bits_per_sample: *cast::<i32>(&raw[4]).unwrap(),
+                channels: *cast::<i32>(&raw[5]).unwrap(),
+                data: cast::<Vec<u8>>(&raw[6]).unwrap().clone(),
+            });
+        }
         let mut progress = None;
         let progress_opt = hints.get("progress");
         if progress_opt.is_some() {
@@ -147,6 +188,7 @@ impl Notification {
             urgency,
             image_path,
             progress,
+            image_data,
         }
     }
 
@@ -246,7 +288,7 @@ impl NotificationServer {
                     "hints",
                     "expire_timeout",
                 ),
-                ("reply",),
+                ("id",),
                 move |_,
                       serverref: &mut Arc<Mutex<NotificationWrapper>>,
                       (
@@ -311,7 +353,7 @@ impl NotificationServer {
                             );
                         });
                     }
-                    Ok(("ok",))
+                    Ok((replaces_id,))
                 },
             );
             c.method(
@@ -330,6 +372,21 @@ impl NotificationServer {
                 move |_, serverref: &mut Arc<Mutex<NotificationWrapper>>, ()| {
                     let mut notifications = Vec::new();
                     for notification in serverref.lock().unwrap().get_all_notifications().iter() {
+                        let raw_data: ImageData;
+                        if notification.image_data.is_some() {
+                            raw_data = notification.image_data.clone().unwrap();
+                        } else {
+                            raw_data = ImageData::empty();
+                        }
+                        let image_data = (
+                            raw_data.width,
+                            raw_data.height,
+                            raw_data.rowstride,
+                            raw_data.has_alpha,
+                            raw_data.bits_per_sample,
+                            raw_data.channels,
+                            raw_data.data,
+                        );
                         notifications.push((
                             notification.app_name.clone(),
                             notification.replaces_id.clone(),
@@ -344,6 +401,7 @@ impl NotificationServer {
                                 .clone()
                                 .unwrap_or_else(|| "".to_string()),
                             notification.progress.clone().unwrap_or_else(|| -1),
+                            image_data,
                         ));
                     }
                     Ok((notifications,))
