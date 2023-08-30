@@ -1,0 +1,3 @@
+timeout = 3       # this sets the timeout for the notification -> how long it stays
+dnd_override = 2  # this is the minimum amount of urgency that a notification needs to be shown despite do not disturb
+# note, values for dnd_override are: 0 for low, essentially disables dnd, 1 for normal, 2 for critical, any other value will block notifications no matter the urgency during dnd

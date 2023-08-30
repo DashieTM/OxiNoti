@@ -31,26 +31,37 @@ fn main() {
     if args.len() > 1 {
         let mut argiter = args.iter();
         argiter.next().unwrap();
-        match argiter.next().unwrap().as_str() {
-            "--css" => {
-                let next = argiter.next();
-                if next.is_some() {
-                    config_strings.0 = next.unwrap().clone();
-                    config_strings.1 = "".to_string();
+        loop {
+            let maybe_next = argiter.next();
+            if maybe_next.is_none() {
+                break;
+            }
+            match maybe_next.unwrap().as_str() {
+                "--css" => {
+                    let next = argiter.next();
+                    if next.is_some() {
+                        config_strings.0 = next.unwrap().clone();
+                    }
+                }
+                "--config" => {
+                    let next = argiter.next();
+                    if next.is_some() {
+                        config_strings.1 = next.unwrap().clone();
+                    }
+                }
+                _ => {
+                    print!(
+                        "usage:
+    --css: use a specific path to load a css style sheet.
+    --config: use a specific path to load a config file.
+    --help: show this message.\n"
+                    );
+                    return;
                 }
             }
-            _ => {
-                print!(
-                    "usage:
-    --css: use a specific path to load a css style sheet.
-    --help: show this message.\n"
-                );
-                return;
-            }
         }
-    } else {
-        config_strings = create_config_dir(config_strings.0, config_strings.1)
     }
+    config_strings = create_config_dir(config_strings.0, config_strings.1);
 
     initialize_ui(config_strings.0, config_strings.1);
 }
@@ -62,11 +73,11 @@ fn create_config_dir(css_string: String, toml_string: String) -> (String, String
     }
     let config = maybe_config_dir.unwrap();
     let config_dir = config.config_dir();
-    if !config_dir.exists() {
-        fs::create_dir(config_dir).expect("Could not create config directory");
-    }
-    let mut file_path: PathBuf = "".to_string().into();
-    if css_string == "" {
+    let mut file_path: PathBuf = PathBuf::from(css_string);
+    if !file_path.exists() {
+        if !config_dir.exists() {
+            fs::create_dir(config_dir).expect("Could not create config directory");
+        }
         file_path = config_dir.join("style.css");
         if !file_path.exists() {
             fs::File::create(&file_path).expect("Could not create css config file");
@@ -79,17 +90,16 @@ fn create_config_dir(css_string: String, toml_string: String) -> (String, String
             .expect("Could not write default values");
         }
     }
-    let mut config_path: PathBuf = "".to_string().into();
-    if toml_string == "" {
+    let mut config_path: PathBuf = PathBuf::from(toml_string);
+    if !config_path.exists() {
+        if !config_dir.exists() {
+            fs::create_dir(config_dir).expect("Could not create config directory");
+        }
         config_path = config_dir.join("oxinoti.toml");
         if !config_path.exists() {
             fs::File::create(&config_path).expect("Could not create config file");
-            fs::write(
-                &config_path,
-                "timeout = 3
-             dnd_override = 2",
-            )
-            .expect("Could not write default values");
+            fs::write(&config_path, "timeout = 3\ndnd_override = 2")
+                .expect("Could not write default values");
         }
     }
     (
