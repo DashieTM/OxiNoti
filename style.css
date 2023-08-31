@@ -1,20 +1,22 @@
+@import url("/home/dashie/.config/gtk-3.0/gtk.css");
+
 #MainWindow {
-  background-color: rgba(0, 0, 0, 0);
+  background-color: transparent;
   padding: 0px;
   /* opacity: 0; */
 }
 
 .MainBox {
-  background-color: rgba(0, 0, 0, 0);
+  background-color: transparent;
   padding: 0px;
   /* opacity: 0; */
 }
 
 .NotificationBox {
-  opacity: 90;
+  background-color: #353747;
   border-radius: 5px;
   border: solid 1px;
-  margin: 5px;
+  margin: 0px;
   padding: 5px;
 }
 

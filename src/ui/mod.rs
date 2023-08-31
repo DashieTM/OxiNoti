@@ -114,15 +114,14 @@ pub fn show_notification(
 
     let notibox = Arc::new(NotificationBox::new(gtk::Orientation::Vertical, 0));
     let notibutton = Button::new();
+    notibox.set_opacity(1.0);
     notibox.style_context().add_class("NotificationBox");
     notibox.imp().notification_id.set(notification.replaces_id);
     notibox
         .imp()
         .reset
         .store(true, std::sync::atomic::Ordering::SeqCst);
-    notibox.set_opacity(1.0);
     notibox.set_size_request(120, 5);
-    notibox.style_context().add_class("NotificationBox");
     let urgency_string = notification.urgency.to_str();
     notibox.style_context().add_class(urgency_string);
     notibox
