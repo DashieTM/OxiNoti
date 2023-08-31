@@ -349,6 +349,7 @@ impl NotificationServer {
                         hints,
                         expire_timeout,
                     );
+                    notification.print();
                     let mut server = serverref.lock().unwrap();
                     server.add_notification(&mut notification);
                     if urgency_should_ignore_dnd(

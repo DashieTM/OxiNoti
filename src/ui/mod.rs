@@ -145,6 +145,8 @@ pub fn show_notification(
     app_name.set_valign(Align::Center);
     app_name.set_halign(Align::Center);
     bodybox.add(&app_name);
+    let mut has_body_image = false;
+    let mut image_path = "".to_string();
 
     // summary
     if notification.summary != "" {
@@ -165,11 +167,16 @@ pub fn show_notification(
     // body
     if notification.body != "" {
         notiimp.has_body.set(true);
-        let (body, text_css) = class_from_html(notification.body);
+        let (body, text_css, has_image) = class_from_html(notification.body);
         let text = Label::new(None);
+        if has_image {
+            has_body_image = has_image;
+            image_path = text_css;
+        } else {
+            text.style_context().add_class(&text_css);
+        }
         text.style_context().add_class("text");
-        text.style_context().add_class(&text_css);
-        text.set_text(body.as_str());
+        text.set_markup(body.as_str());
         text.set_wrap_mode(pango::WrapMode::Word);
         text.set_width_chars(15);
         text.set_line_wrap(true);
@@ -190,12 +197,20 @@ pub fn show_notification(
 
     // image
     let image = Image::new();
-    if set_image(
-        notification.image_data,
-        notification.image_path,
-        notification.app_icon,
-        &image,
-    ) {
+    if has_body_image
+        && set_image(
+            notification.image_data.clone(),
+            Some(image_path),
+            notification.app_icon.clone(),
+            &image,
+        )
+        || set_image(
+            notification.image_data,
+            notification.image_path,
+            notification.app_icon,
+            &image,
+        )
+    {
         notiimp.has_image.set(true);
         let mut notiimage = notiimp.image.borrow_mut();
         *notiimage = image;
@@ -380,13 +395,15 @@ pub fn modify_notification(
             }),
         );
             newentry.connect_button_press_event(
-                clone!(@weak window => @default-return Inhibit(false), move |_, _| {
+                clone!(@weak notiimp, @weak window => @default-return Inhibit(false), move |_, _| {
+                    notiimp.reset.store(true, std::sync::atomic::Ordering::SeqCst);
                     gtk_layer_shell::set_keyboard_interactivity(&window, true);
                     Inhibit(false)
                 }),
             );
             newentry.connect_focus_out_event(
-                clone!(@weak window => @default-return Inhibit(false), move |_,_| {
+                clone!(@weak notiimp, @weak window => @default-return Inhibit(false), move |_,_| {
+                    notiimp.reset.store(false, std::sync::atomic::Ordering::SeqCst);
                     gtk_layer_shell::set_keyboard_interactivity(&window, false);
                 Inhibit(false)
                 }),
@@ -403,7 +420,7 @@ pub fn modify_notification(
         notibodybox.remove(&notiimp.summary.take());
         notiimp.has_summary.set(false);
     } else if notification.summary != "" {
-        let (text, css_classes) = class_from_html(notification.summary);
+        let (text, css_classes, _) = class_from_html(notification.summary);
         let mut text_borrow = notiimp.summary.borrow_mut();
         if !exists {
             *text_borrow = Label::new(None);
@@ -421,7 +438,7 @@ pub fn modify_notification(
         notibodybox.remove(&notiimp.body.take());
         notiimp.has_body.set(false);
     } else if notification.body != "" {
-        let (text, css_classes) = class_from_html(notification.body);
+        let (text, css_classes, _has_image) = class_from_html(notification.body);
         let mut text_borrow = notiimp.body.borrow_mut();
         if !exists {
             *text_borrow = Label::new(None);
@@ -591,35 +608,40 @@ pub fn initialize_ui(css_string: String, config_file: String) {
     app.run_with_args(&[""]);
 }
 
-fn class_from_html(mut body: String) -> (String, String) {
-    let mut open = false;
+fn class_from_html(mut body: String) -> (String, String, bool) {
     let mut ret: &str = "";
-    for char in body.chars() {
-        if char == '<' && !open {
-            open = true;
-        } else if open {
-            ret = match char {
-                'b' => "bold",
-                'i' => "italic",
-                'u' => "underline",
-                'h' => "hyprlink",
-                _ => {
-                    ret = "";
-                    break;
-                }
-            };
-            break;
+    let mut retstring = body.clone();
+    let has_image: bool;
+    if body.contains("<br><img src=\"file:///") {
+        has_image = true;
+        let split = retstring.split_once("<br><img src=\"file:///").unwrap();
+        body = split.0.to_string() + "sent an image.".into();
+        retstring = split.1.to_string();
+        let split = retstring.split_once("\"");
+        if split.is_some() {
+            ret = split.unwrap().0;
         }
+    } else {
+        has_image = false;
+        let mut open = false;
+        for char in body.chars() {
+            if char == '<' && !open {
+                open = true;
+            } else if open {
+                ret = match char {
+                    'u' => "underline",
+                    _ => {
+                        ret = "";
+                        break;
+                    }
+                };
+                break;
+            }
+        }
+        body.remove_matches("<u>");
+        body.remove_matches("</u>");
     }
-    body.remove_matches("<b>");
-    body.remove_matches("</b>");
-    body.remove_matches("<i>");
-    body.remove_matches("</i>");
-    body.remove_matches("<a href=\">");
-    body.remove_matches("</a>");
-    body.remove_matches("<u>");
-    body.remove_matches("</u>");
-    (body, String::from(ret))
+    (body, String::from(ret), has_image)
 }
 
 fn set_image(
