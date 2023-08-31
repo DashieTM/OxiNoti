@@ -12,5 +12,4 @@ directories-next = "2.0.0"
 dbus = "0.9.7"
 dbus-crossroads = "0.5.2"
 gtk = { version = "*", package = "gtk" }
-gtk-layer-shell = "*"
-gdk-pixbuf = "*"
+gtk-layer-shell = "0.6.1"

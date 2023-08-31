@@ -23,10 +23,11 @@ use gtk::subclass::prelude::*;
 use gtk::{glib, Image, Label, ProgressBar};
 
 #[derive(Default)]
-pub struct NotificationButton {
+pub struct NotificationBox {
     pub notification_id: Cell<u32>,
     pub removed: Mutex<bool>,
     pub fraction: RefCell<ProgressBar>,
+    pub inline_reply: RefCell<gtk::Entry>,
     pub body: RefCell<Label>,
     pub summary: RefCell<Label>,
     pub image: RefCell<Image>,
@@ -38,25 +39,24 @@ pub struct NotificationButton {
     pub has_summary: Cell<bool>,
     pub has_image: Cell<bool>,
     pub has_progbar: Cell<bool>,
+    pub has_inline_reply: Cell<bool>,
     pub previous_urgency: Cell<String>,
 }
 
 #[glib::object_subclass]
-impl ObjectSubclass for NotificationButton {
-    const NAME: &'static str = "NotificationButton";
-    type Type = super::NotificationButton;
-    type ParentType = gtk::Button;
+impl ObjectSubclass for NotificationBox {
+    const NAME: &'static str = "NotificationBox";
+    type Type = super::NotificationBox;
+    type ParentType = gtk::Box;
 }
 
-impl ObjectImpl for NotificationButton {}
+impl ObjectImpl for NotificationBox {}
 
-impl WidgetImpl for NotificationButton {}
+impl WidgetImpl for NotificationBox {}
 
-impl ContainerImpl for NotificationButton {}
+impl ContainerImpl for NotificationBox {}
 
-impl BoxImpl for NotificationButton {}
+impl BoxImpl for NotificationBox {}
 
-impl BinImpl for NotificationButton {}
-
-impl ButtonImpl for NotificationButton {}
+impl BinImpl for NotificationBox {}
 

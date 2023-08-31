@@ -27,7 +27,7 @@ use std::{
     time::Duration,
 };
 
-use gdk_pixbuf::Pixbuf;
+use gtk::gdk_pixbuf::Pixbuf;
 use gtk::{
     gdk,
     gio::SimpleAction,
@@ -36,10 +36,11 @@ use gtk::{
     prelude::{ApplicationExt, ApplicationExtManual},
     subclass::prelude::ObjectSubclassIsExt,
     traits::{
-        BoxExt, ButtonExt, ContainerExt, CssProviderExt, GtkWindowExt, ImageExt, LabelExt,
-        ProgressBarExt, StyleContextExt, WidgetExt,
+        BoxExt, ButtonExt, ContainerExt, CssProviderExt, EntryExt, GtkWindowExt, ImageExt,
+        LabelExt, ProgressBarExt, StyleContextExt, WidgetExt,
     },
-    Align, Application, Box, Image, Label, PackType, ProgressBar, StyleContext, Window, WindowType,
+    Align, Application, Box, Button, Image, Inhibit, Label, PackType, ProgressBar, StyleContext,
+    Window, WindowType,
 };
 use gtk_layer_shell::Edge;
 
@@ -48,7 +49,7 @@ use crate::{
     ui::utils::config::parse_config,
 };
 
-use self::utils::{config::Config, NotificationButton};
+use self::utils::{config::Config, NotificationBox};
 
 const APP_ID: &str = "org.dashie.oxinoti";
 
@@ -57,7 +58,7 @@ pub fn remove_notification(
     window: &Window,
     noticount: Arc<Cell<i32>>,
     id: u32,
-    id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
+    id_map: Arc<RwLock<HashMap<u32, Arc<NotificationBox>>>>,
     timed_out: bool,
     mutex: Arc<Mutex<bool>>,
 ) {
@@ -102,15 +103,17 @@ pub fn show_notification(
     mainbox: &Box,
     window: &Window,
     notification: Notification,
-    tx2: Arc<Sender<Arc<NotificationButton>>>,
-    id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
+    tx2: Arc<Sender<Arc<NotificationBox>>>,
+    id_map: Arc<RwLock<HashMap<u32, Arc<NotificationBox>>>>,
     mutex: Arc<Mutex<bool>>,
     config: Arc<Config>,
 ) {
     let mutexclone = mutex.clone();
+    let mutexclone2 = mutex.clone();
     let _guard = mutex.lock().unwrap();
 
-    let notibox = Arc::new(NotificationButton::new());
+    let notibox = Arc::new(NotificationBox::new(gtk::Orientation::Vertical, 5));
+    let notibutton = Button::new();
     notibox.style_context().add_class("NotificationBox");
     notibox.imp().notification_id.set(notification.replaces_id);
     notibox
@@ -183,7 +186,8 @@ pub fn show_notification(
     regularbox.set_child_packing(&bodybox, true, true, 5, PackType::Start);
     bodybox.set_halign(gtk::Align::Fill);
     basebox.add(&regularbox);
-    notibox.set_child(Some(&basebox));
+    notibox.add(&notibutton);
+    notibutton.set_child(Some(&basebox));
 
     // image
     let image = Image::new();
@@ -215,14 +219,65 @@ pub fn show_notification(
         }
     }
 
+    // inline reply
+    let mut has_inline_reply = false;
+    for action in notification.actions.iter() {
+        if action == "inline-reply" {
+            has_inline_reply = true;
+        }
+    }
+    if has_inline_reply {
+        notiimp.has_inline_reply.set(true);
+        let inline_reply = gtk::Entry::new();
+        inline_reply.set_focus_on_click(true);
+        let id_map_clone = id_map.clone();
+        let mut shared_inline_reply = notiimp.inline_reply.borrow_mut();
+        inline_reply.connect_activate(
+            clone!(@weak window, @weak noticount, @weak mainbox => move |entry| {
+                let id = notification.replaces_id;
+                let text = entry.text().to_string();
+                activate_inline_reply(mainbox, id, noticount, window, id_map_clone.clone(), text, mutexclone.clone());
+            }),
+        );
+        inline_reply.connect_button_press_event(
+            clone!(@weak window => @default-return Inhibit(false), move |_, _| {
+                gtk_layer_shell::set_keyboard_interactivity(&window, true);
+                Inhibit(false)
+            }),
+        );
+        inline_reply.connect_focus_out_event(
+            clone!(@weak window => @default-return Inhibit(false), move |_,_| {
+                gtk_layer_shell::set_keyboard_interactivity(&window, false);
+            Inhibit(false)
+            }),
+        );
+        *shared_inline_reply = inline_reply;
+        notibox.add(&*shared_inline_reply);
+    } else {
+        notiimp.has_inline_reply.set(false);
+    }
+
     noticount.update(|x| x + 1);
 
     // id_map used to retrieve notification afterwards
     let id_map_clone = id_map.clone();
     let id = notibox.imp().notification_id.get();
-    notibox.connect_clicked(
+    notibutton.connect_clicked(
         clone!(@weak noticount, @weak mainbox, @weak window => move |_| {
-            remove_notification(&mainbox, &window, noticount, id, id_map.clone(), false, mutexclone.clone());
+        let id_clone = id;
+        thread::spawn(move || {
+            use dbus::blocking::Connection;
+
+            let conn = Connection::new_session().unwrap();
+            let proxy = conn.with_proxy(
+                "org.freedesktop.Notifications",
+                "/org/freedesktop/Notifications",
+                Duration::from_millis(1000),
+            );
+            let _: Result<(), dbus::Error> =
+                proxy.method_call("org.freedesktop.Notifications", "InvokeAction", (id_clone,"default"));
+        });
+            remove_notification(&mainbox, &window, noticount, id, id_map.clone(), false, mutexclone2.clone());
         }),
     );
 
@@ -252,8 +307,11 @@ pub fn show_notification(
 }
 
 pub fn modify_notification(
+    noticount: Arc<Cell<i32>>,
+    mainbox: &Box,
+    window: &Window,
     notification: Notification,
-    id_map: Arc<RwLock<HashMap<u32, Arc<NotificationButton>>>>,
+    id_map: Arc<RwLock<HashMap<u32, Arc<NotificationBox>>>>,
     mutex: Arc<Mutex<bool>>,
 ) {
     let _guard = mutex.lock().unwrap();
@@ -274,7 +332,9 @@ pub fn modify_notification(
         .store(true, std::sync::atomic::Ordering::SeqCst);
     notibox_borrow.style_context().restore();
     let urgency_string = notification.urgency.to_str();
-    notibox_borrow.style_context().remove_class(&notiimp.previous_urgency.take());
+    notibox_borrow
+        .style_context()
+        .remove_class(&notiimp.previous_urgency.take());
     notiimp.previous_urgency.set(urgency_string.to_string());
     notibox_borrow.style_context().add_class(urgency_string);
 
@@ -296,6 +356,49 @@ pub fn modify_notification(
         }
     }
 
+    // inline reply
+    let mut has_inline_reply = false;
+    for action in notification.actions.iter() {
+        if action == "inline-reply" {
+            has_inline_reply = true;
+        }
+    }
+    let exists = notiimp.has_inline_reply.get();
+    if !has_inline_reply && exists {
+        notibasebox.remove(&notiimp.inline_reply.take());
+        notiimp.has_inline_reply.set(false);
+    } else if has_inline_reply {
+        let mut entry = notiimp.inline_reply.borrow_mut();
+        if !exists {
+            let newentry = gtk::Entry::new();
+            let mutexclone = mutex.clone();
+            let id_map_clone = id_map.clone();
+            newentry.connect_activate(
+            clone!(@weak window, @weak noticount, @weak mainbox => move |entry| {
+                let id = notification.replaces_id;
+                let text = entry.text().to_string();
+                activate_inline_reply(mainbox, id, noticount, window, id_map_clone.clone(), text, mutexclone.clone());
+            }),
+        );
+            newentry.connect_button_press_event(
+                clone!(@weak window => @default-return Inhibit(false), move |_, _| {
+                    gtk_layer_shell::set_keyboard_interactivity(&window, true);
+                    Inhibit(false)
+                }),
+            );
+            newentry.connect_focus_out_event(
+                clone!(@weak window => @default-return Inhibit(false), move |_,_| {
+                    gtk_layer_shell::set_keyboard_interactivity(&window, false);
+                Inhibit(false)
+                }),
+            );
+            *entry = newentry;
+            notibasebox.add(&*entry);
+            notiimp.has_inline_reply.set(true);
+        }
+    }
+
+    // summary
     let exists = notiimp.has_summary.get();
     if notification.summary == "" && exists {
         notibodybox.remove(&notiimp.summary.take());
@@ -386,12 +489,19 @@ pub fn initialize_ui(css_string: String, config_file: String) {
             .child(&mainbox)
             .type_(WindowType::Toplevel)
             .build();
+        window.connect_button_press_event(
+            clone!(@weak window => @default-return Inhibit(false), move |_,_| {
+                gtk_layer_shell::set_keyboard_interactivity(&window, false);
+            Inhibit(false)
+            }),
+        );
         window.set_vexpand_set(true);
         window.set_hexpand_set(false);
         window.set_default_size(120, 120);
 
         gtk_layer_shell::init_for_window(&window);
         gtk_layer_shell::auto_exclusive_zone_enable(&window);
+        // gtk_layer_shell::set_keyboard_mode(&window, gtk_layer_shell::KeyboardMode::OnDemand);
         gtk_layer_shell::set_layer(&window, gtk_layer_shell::Layer::Overlay);
         gtk_layer_shell::set_anchor(&window, Edge::Right, true);
         gtk_layer_shell::set_anchor(&window, Edge::Top, true);
@@ -403,7 +513,7 @@ pub fn initialize_ui(css_string: String, config_file: String) {
         let noticount = Arc::new(Cell::new(0));
         let noticount2 = noticount.clone();
 
-        let id_map = Arc::new(RwLock::new(HashMap::<u32, Arc<NotificationButton>>::new()));
+        let id_map = Arc::new(RwLock::new(HashMap::<u32, Arc<NotificationBox>>::new()));
         let id_map_clone = id_map.clone();
 
         let action_present = SimpleAction::new("present", None);
@@ -437,7 +547,14 @@ pub fn initialize_ui(css_string: String, config_file: String) {
                 );
             } else {
                 // modify notification if id is already in map
-                modify_notification(notification, id_map.clone(), lock2.clone());
+                modify_notification(
+                    noticount.clone(),
+                    &mainbox,
+                    &window,
+                    notification,
+                    id_map.clone(),
+                    lock2.clone(),
+                );
             }
             glib::Continue(true)
         });
@@ -516,7 +633,7 @@ fn set_image(
     let resize_pixbuf = |pixbuf: Option<Pixbuf>| {
         pixbuf
             .unwrap()
-            .scale_simple(100, 100, gdk_pixbuf::InterpType::Bilinear)
+            .scale_simple(100, 100, gtk::gdk_pixbuf::InterpType::Bilinear)
     };
     let use_icon = |mut _pixbuf: Option<Pixbuf>| {
         if Path::new(&icon).is_file() {
@@ -549,7 +666,7 @@ fn set_image(
         let bytes = gtk::glib::Bytes::from(&image_data.data);
         pixbuf = Some(Pixbuf::from_bytes(
             &bytes,
-            gdk_pixbuf::Colorspace::Rgb,
+            gtk::gdk_pixbuf::Colorspace::Rgb,
             image_data.has_alpha,
             image_data.bits_per_sample,
             image_data.width,
@@ -562,4 +679,29 @@ fn set_image(
         return true;
     }
     false
+}
+
+pub fn activate_inline_reply(
+    mainbox: Box,
+    id: u32,
+    noticount: Arc<Cell<i32>>,
+    window: Window,
+    id_map: Arc<RwLock<HashMap<u32, Arc<NotificationBox>>>>,
+    text: String,
+    mutex: Arc<Mutex<bool>>,
+) {
+    thread::spawn(move || {
+        use dbus::blocking::Connection;
+
+        let conn = Connection::new_session().unwrap();
+        let proxy = conn.with_proxy(
+            "org.freedesktop.Notifications",
+            "/org/freedesktop/Notifications",
+            Duration::from_millis(1000),
+        );
+        let _: Result<(), dbus::Error> =
+            proxy.method_call("org.freedesktop.Notifications", "InlineReply", (id, text));
+    });
+    gtk_layer_shell::set_keyboard_interactivity(&window, false);
+    remove_notification(&mainbox, &window, noticount, id, id_map, false, mutex);
 }

@@ -15,29 +15,32 @@ You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see <http://www.gnu.org/licenses/>.
 */
 
-mod notificationbutton;
 pub mod config;
+mod notificationbutton;
 
 use glib::Object;
 use gtk::glib;
 
 glib::wrapper! {
-    pub struct NotificationButton(ObjectSubclass<notificationbutton::NotificationButton>)
-        @extends gtk::Box, gtk::Button, gtk::Widget,
+    pub struct NotificationBox(ObjectSubclass<notificationbutton::NotificationBox>)
+        @extends gtk::Box, gtk::Widget,
         @implements gtk::Actionable, gtk::Buildable, gtk::Container;
 }
 
-impl NotificationButton {
-    pub fn new() -> Self {
-        Object::builder().build()
+impl NotificationBox {
+    pub fn new(orientation: gtk::Orientation, spacing: i32) -> Self {
+        Object::builder()
+            .property("orientation", orientation)
+            .property("spacing", spacing)
+            .build()
     }
 }
 
-impl Default for NotificationButton {
+impl Default for NotificationBox {
     fn default() -> Self {
-        Self::new()
+        Self::new(gtk::Orientation::Horizontal, 5)
     }
 }
 
-unsafe impl Send for NotificationButton {}
-unsafe impl Sync for NotificationButton {}
+unsafe impl Send for NotificationBox {}
+unsafe impl Sync for NotificationBox {}

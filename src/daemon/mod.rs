@@ -28,6 +28,7 @@ use dbus::{
     arg::{self, cast, prop_cast, RefArg},
     blocking::Connection,
 };
+use dbus_crossroads::Context;
 use gtk::glib::Sender;
 
 use crate::ui::utils::config::Config;
@@ -171,6 +172,9 @@ impl Notification {
                     .to_string(),
             );
         }
+        for action in actions.iter() {
+            println!("action: {}", action);
+        }
         let mut image_data = None;
         let image_data_opt: Option<&VecDeque<Box<dyn RefArg>>> = prop_cast(&hints, "image-data");
         if image_data_opt.is_some() {
@@ -295,6 +299,12 @@ impl NotificationServer {
             .unwrap();
         let mut cr = dbus_crossroads::Crossroads::new();
         let token = cr.register("org.freedesktop.Notifications", |c| {
+            let action_invoked = c
+                .signal::<(u32, String), _>("ActionInvoked", ("id", "action_key"))
+                .msg_fn();
+            let inline_replied = c
+                .signal::<(u32, String), _>("NotificationReplied", ("id", "text"))
+                .msg_fn();
             c.method(
                 "Notify",
                 (
@@ -487,6 +497,26 @@ impl NotificationServer {
                 move |_, serverref: &mut Arc<Mutex<NotificationWrapper>>, ()| {
                     let res = serverref.lock().unwrap().toggle_notification_center();
                     Ok((res,))
+                },
+            );
+            c.method(
+                "InvokeAction",
+                ("id", "action"),
+                (),
+                move |ctx: &mut Context, _, (id, action): (u32, String)| {
+                    let signal = action_invoked(ctx.path(), &(id, action));
+                    ctx.push_msg(signal);
+                    Ok(())
+                },
+            );
+            c.method(
+                "InlineReply",
+                ("id", "text"),
+                (),
+                move |ctx: &mut Context, _, (id, text): (u32, String)| {
+                    let signal = inline_replied(ctx.path(), &(id, text));
+                    ctx.push_msg(signal);
+                    Ok(())
                 },
             );
         });
