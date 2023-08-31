@@ -112,7 +112,7 @@ pub fn show_notification(
     let mutexclone2 = mutex.clone();
     let _guard = mutex.lock().unwrap();
 
-    let notibox = Arc::new(NotificationBox::new(gtk::Orientation::Vertical, 5));
+    let notibox = Arc::new(NotificationBox::new(gtk::Orientation::Vertical, 0));
     let notibutton = Button::new();
     notibox.style_context().add_class("NotificationBox");
     notibox.imp().notification_id.set(notification.replaces_id);

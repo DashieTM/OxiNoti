@@ -38,7 +38,7 @@ impl NotificationBox {
 
 impl Default for NotificationBox {
     fn default() -> Self {
-        Self::new(gtk::Orientation::Horizontal, 5)
+        Self::new(gtk::Orientation::Horizontal, 0)
     }
 }
 
