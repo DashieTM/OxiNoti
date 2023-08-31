@@ -432,22 +432,30 @@ pub fn modify_notification(
         text_borrow.style_context().add_class(&css_classes);
     }
 
+    let mut has_body_image = false;
+    let mut body_image_path = "".to_string();
+
     // body
     let exists = notiimp.has_body.get();
     if notification.body == "" && exists {
         notibodybox.remove(&notiimp.body.take());
         notiimp.has_body.set(false);
     } else if notification.body != "" {
-        let (text, css_classes, _has_image) = class_from_html(notification.body);
+        let (text, css_classes, has_image) = class_from_html(notification.body);
         let mut text_borrow = notiimp.body.borrow_mut();
         if !exists {
             *text_borrow = Label::new(None);
             notibodybox.add(&*text_borrow);
             notiimp.has_body.set(true);
         }
+        if has_image {
+            has_body_image = has_image;
+            body_image_path = css_classes;
+        } else {
+            text_borrow.style_context().add_class(&css_classes);
+        }
         text_borrow.set_text(text.as_str());
         text_borrow.style_context().add_class("text");
-        text_borrow.style_context().add_class(&css_classes);
     }
 
     // image
@@ -467,12 +475,21 @@ pub fn modify_notification(
             notiregularbox.add(&*image_borrow);
             notiimp.has_image.set(true);
         }
-        set_image(
-            notification.image_data,
-            Some(image_path),
-            notification.app_icon,
-            &image_borrow,
-        );
+        if has_body_image {
+            set_image(
+                notification.image_data.clone(),
+                Some(body_image_path),
+                notification.app_icon.clone(),
+                &image_borrow,
+            );
+        } else {
+            set_image(
+                notification.image_data,
+                Some(image_path),
+                notification.app_icon,
+                &image_borrow,
+            );
+        }
     }
 }
 
