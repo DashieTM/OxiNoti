@@ -188,12 +188,9 @@ pub fn show_notification(
         bodybox.set_child_packing(&*notitext, true, true, 5, PackType::End);
     }
 
-    regularbox.add(&bodybox);
     regularbox.set_child_packing(&bodybox, true, true, 5, PackType::Start);
     bodybox.set_halign(gtk::Align::Fill);
-    basebox.add(&regularbox);
     notibox.add(&notibutton);
-    notibutton.set_child(Some(&basebox));
 
     // image
     let image = Image::new();
@@ -303,10 +300,13 @@ pub fn show_notification(
 
     let mut notibodybox = notiimp.bodybox.borrow_mut();
     *notibodybox = bodybox;
-    let mut notibasebox = notiimp.basebox.borrow_mut();
-    *notibasebox = basebox;
+    regularbox.add(&*notibodybox);
     let mut notiregularbox = notiimp.regularbox.borrow_mut();
     *notiregularbox = regularbox;
+    basebox.add(&*notiregularbox);
+    let mut notibasebox = notiimp.basebox.borrow_mut();
+    *notibasebox = basebox;
+    notibutton.set_child(Some(&*notibasebox));
 
     // thread removes notification after timeout
     thread::spawn(clone!(@weak notibox => move || {
@@ -464,7 +464,7 @@ pub fn modify_notification(
     if notification.image_path.is_some() {
         image_path = notification.image_path.unwrap();
     }
-    if image_path == "" && notification.app_icon == "" && exists {
+    if image_path == "" && notification.app_icon == "" && !has_body_image && exists {
         notiregularbox.remove(&notiimp.image.take());
         notiimp.has_image.set(false);
     } else {
