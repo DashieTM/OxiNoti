@@ -675,8 +675,7 @@ fn set_image(
     };
     let use_icon = |mut _pixbuf: Option<Pixbuf>| {
         if Path::new(&icon).is_file() {
-            _pixbuf = Some(Pixbuf::from_file(&icon).unwrap());
-            _pixbuf = resize_pixbuf(_pixbuf);
+            _pixbuf = Some(Pixbuf::from_file_at_size(&icon, 100, 100).unwrap());
             image.set_pixbuf(Some(&_pixbuf.unwrap()));
             image.style_context().add_class("picture");
         } else {
@@ -699,7 +698,8 @@ fn set_image(
     } else if icon != "" {
         (use_icon)(pixbuf);
         return true;
-    } else if data.is_some() {
+    }
+    if data.is_some() {
         let image_data = data.unwrap();
         let bytes = gtk::glib::Bytes::from(&image_data.data);
         pixbuf = Some(Pixbuf::from_bytes(
