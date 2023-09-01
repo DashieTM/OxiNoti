@@ -630,13 +630,15 @@ fn class_from_html(mut body: String) -> (String, String, bool) {
     let mut retstring = body.clone();
     let has_image: bool;
     if body.contains("<br><img src=\"file:///") {
-        has_image = true;
         let split = retstring.split_once("<br><img src=\"file:///").unwrap();
         body = split.0.to_string() + "sent an image.".into();
         retstring = split.1.to_string();
         let split = retstring.split_once("\"");
         if split.is_some() {
             ret = split.unwrap().0;
+            has_image = true;
+        } else {
+            has_image = false;
         }
     } else {
         has_image = false;
