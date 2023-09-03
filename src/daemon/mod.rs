@@ -172,9 +172,6 @@ impl Notification {
                     .to_string(),
             );
         }
-        for action in actions.iter() {
-            println!("action: {}", action);
-        }
         let mut image_data = None;
         let image_data_opt: Option<&VecDeque<Box<dyn RefArg>>> = prop_cast(&hints, "image-data");
         if image_data_opt.is_some() {
@@ -349,7 +346,6 @@ impl NotificationServer {
                         hints,
                         expire_timeout,
                     );
-                    notification.print();
                     let mut server = serverref.lock().unwrap();
                     server.add_notification(&mut notification);
                     if urgency_should_ignore_dnd(

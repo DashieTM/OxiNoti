@@ -704,6 +704,9 @@ fn set_image(
     if data.is_some() {
         let image_data = data.unwrap();
         let bytes = gtk::glib::Bytes::from(&image_data.data);
+        if bytes.is_empty() {
+            return false;
+        }
         pixbuf = Some(Pixbuf::from_bytes(
             &bytes,
             gtk::gdk_pixbuf::Colorspace::Rgb,
