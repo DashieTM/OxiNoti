@@ -642,23 +642,6 @@ fn class_from_html(mut body: String) -> (String, String, bool) {
         }
     } else {
         has_image = false;
-        let mut open = false;
-        for char in body.chars() {
-            if char == '<' && !open {
-                open = true;
-            } else if open {
-                ret = match char {
-                    'u' => "underline",
-                    _ => {
-                        ret = "";
-                        break;
-                    }
-                };
-                break;
-            }
-        }
-        body.remove_matches("<u>");
-        body.remove_matches("</u>");
     }
     (body, String::from(ret), has_image)
 }
@@ -677,9 +660,11 @@ fn set_image(
     };
     let use_icon = |mut _pixbuf: Option<Pixbuf>| {
         if Path::new(&icon).is_file() {
-            _pixbuf = Some(Pixbuf::from_file_at_size(&icon, 100, 100).unwrap());
-            image.set_pixbuf(Some(&_pixbuf.unwrap()));
-            image.style_context().add_class("picture");
+            let maybe_pix = Pixbuf::from_file_at_size(&icon, 100, 100);
+            if maybe_pix.is_ok() {
+                image.set_pixbuf(Some(&maybe_pix.unwrap()));
+                image.style_context().add_class("picture");
+            }
         } else {
             image.set_icon_name(Some(icon.as_str()));
             image.style_context().add_class("image");
@@ -688,11 +673,14 @@ fn set_image(
 
     if let Some(path_opt) = picture {
         if Path::new(&path_opt).is_file() {
-            pixbuf = Some(Pixbuf::from_file(path_opt).unwrap());
-            pixbuf = resize_pixbuf(pixbuf);
-            image.set_pixbuf(Some(&pixbuf.unwrap()));
-            image.style_context().add_class("picture");
-            return true;
+            let maybe_pix = Pixbuf::from_file(path_opt);
+            if maybe_pix.is_ok() {
+                pixbuf = Some(maybe_pix.unwrap());
+                pixbuf = resize_pixbuf(pixbuf);
+                image.set_pixbuf(Some(&pixbuf.unwrap()));
+                image.style_context().add_class("picture");
+                return true;
+            }
         } else if icon != "" {
             (use_icon)(pixbuf);
             return true;
