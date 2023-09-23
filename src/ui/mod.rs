@@ -244,21 +244,24 @@ pub fn show_notification(
         let id_map_clone = id_map.clone();
         let mut shared_inline_reply = notiimp.inline_reply.borrow_mut();
         inline_reply.connect_activate(
-            clone!(@weak window, @weak noticount, @weak mainbox => move |entry| {
+            clone!(@weak window,@weak notiimp, @weak noticount, @weak mainbox => move |entry| {
                 let id = notification.replaces_id;
                 let text = entry.text().to_string();
+                notiimp.reply_open.store(false, std::sync::atomic::Ordering::SeqCst);
                 activate_inline_reply(mainbox, id, noticount, window, id_map_clone.clone(), text, mutexclone.clone());
             }),
         );
         inline_reply.connect_button_press_event(
-            clone!(@weak window => @default-return Inhibit(false), move |_, _| {
+            clone!(@weak window, @weak notiimp => @default-return Inhibit(false), move |_, _| {
                 gtk_layer_shell::set_keyboard_interactivity(&window, true);
+                notiimp.reply_open.store(true, std::sync::atomic::Ordering::SeqCst);
                 Inhibit(false)
             }),
         );
         inline_reply.connect_focus_out_event(
-            clone!(@weak window => @default-return Inhibit(false), move |_,_| {
+            clone!(@weak window, @weak notiimp => @default-return Inhibit(false), move |_,_| {
                 gtk_layer_shell::set_keyboard_interactivity(&window, false);
+                notiimp.reply_open.store(false, std::sync::atomic::Ordering::SeqCst);
             Inhibit(false)
             }),
         );
@@ -311,7 +314,7 @@ pub fn show_notification(
     // thread removes notification after timeout
     thread::spawn(clone!(@weak notibox => move || {
         thread::sleep(Duration::from_secs(config.timeout));
-        while notibox.imp().reset.load(std::sync::atomic::Ordering::SeqCst) == true {
+        while notibox.imp().reset.load(std::sync::atomic::Ordering::SeqCst) == true || notibox.imp().reply_open.load(std::sync::atomic::Ordering::SeqCst) == true {
             notibox.imp().reset.store(false, std::sync::atomic::Ordering::SeqCst);
             thread::sleep(Duration::from_secs(config.timeout));
         }
@@ -388,23 +391,24 @@ pub fn modify_notification(
             let mutexclone = mutex.clone();
             let id_map_clone = id_map.clone();
             newentry.connect_activate(
-            clone!(@weak window, @weak noticount, @weak mainbox => move |entry| {
+            clone!(@weak window, @weak notiimp, @weak noticount, @weak mainbox => move |entry| {
                 let id = notification.replaces_id;
                 let text = entry.text().to_string();
+                notiimp.reply_open.store(false, std::sync::atomic::Ordering::SeqCst);
                 activate_inline_reply(mainbox, id, noticount, window, id_map_clone.clone(), text, mutexclone.clone());
             }),
         );
             newentry.connect_button_press_event(
                 clone!(@weak notiimp, @weak window => @default-return Inhibit(false), move |_, _| {
-                    notiimp.reset.store(true, std::sync::atomic::Ordering::SeqCst);
                     gtk_layer_shell::set_keyboard_interactivity(&window, true);
+                    notiimp.reply_open.store(true, std::sync::atomic::Ordering::SeqCst);
                     Inhibit(false)
                 }),
             );
             newentry.connect_focus_out_event(
                 clone!(@weak notiimp, @weak window => @default-return Inhibit(false), move |_,_| {
-                    notiimp.reset.store(false, std::sync::atomic::Ordering::SeqCst);
                     gtk_layer_shell::set_keyboard_interactivity(&window, false);
+                    notiimp.reply_open.store(false, std::sync::atomic::Ordering::SeqCst);
                 Inhibit(false)
                 }),
             );

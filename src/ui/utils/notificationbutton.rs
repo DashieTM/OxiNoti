@@ -40,6 +40,7 @@ pub struct NotificationBox {
     pub has_image: Cell<bool>,
     pub has_progbar: Cell<bool>,
     pub has_inline_reply: Cell<bool>,
+    pub reply_open: AtomicBool,
     pub previous_urgency: Cell<String>,
 }
 
