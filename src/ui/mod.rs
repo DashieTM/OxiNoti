@@ -464,11 +464,8 @@ pub fn modify_notification(
 
     // image
     let exists = notiimp.has_image.get();
-    let mut image_path = "".to_string();
-    if notification.image_path.is_some() {
-        image_path = notification.image_path.unwrap();
-    }
-    if image_path == "" && notification.app_icon == "" && !has_body_image && exists {
+    if notification.image_path.is_some() && notification.app_icon == "" && !has_body_image && exists
+    {
         notiregularbox.remove(&notiimp.image.take());
         notiimp.has_image.set(false);
     } else {
@@ -489,7 +486,7 @@ pub fn modify_notification(
         } else {
             set_image(
                 notification.image_data,
-                Some(image_path),
+                notification.image_path,
                 notification.app_icon,
                 &image_borrow,
             );
